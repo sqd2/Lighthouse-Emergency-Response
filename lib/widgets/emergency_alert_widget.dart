@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/emergency_alert.dart';
+import 'chat_screen.dart';
 
 /// Emergency alert bottom sheet for dispatchers
 class EmergencyAlertSheet extends StatefulWidget {
@@ -400,6 +401,38 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blue,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+
+                  // Chat button (shown when accepted by this dispatcher)
+                  if (acceptedByMe)
+                    Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    alertId: widget.alert.id,
+                                    userRole: 'dispatcher',
+                                    otherPartyEmail: widget.alert.userEmail,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.chat_bubble_outline),
+                            label: const Text('Chat with Citizen'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.blue,
+                              side: const BorderSide(color: Colors.blue),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),
