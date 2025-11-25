@@ -1,77 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart' as geo;
-
-/// Lightweight model for facilities rendered on the map.
-class FacilityPin {
-  final String id;
-  final String name;
-  final String type; // 'hospital', 'clinic', 'police', 'firestation', etc.
-  final double lon;
-  final double lat;
-  final Map<String, dynamic>? meta;
-  final String source; // 'manual' or 'google_places'
-
-  const FacilityPin({
-    required this.id,
-    required this.name,
-    required this.type,
-    required this.lon,
-    required this.lat,
-    this.meta,
-    this.source = 'manual',
-  });
-
-  /// Create a FacilityPin from a Google Places facility
-  factory FacilityPin.fromGooglePlace(dynamic googlePlace) {
-    return FacilityPin(
-      id: googlePlace.placeId,
-      name: googlePlace.name,
-      type: googlePlace.category,
-      lon: googlePlace.lng,
-      lat: googlePlace.lat,
-      source: 'google_places',
-      meta: {
-        'address': googlePlace.address,
-        'rating': googlePlace.rating,
-        'isOpenNow': googlePlace.isOpenNow,
-        'userRatingsTotal': googlePlace.userRatingsTotal,
-        'placeId': googlePlace.placeId,
-      },
-    );
-  }
-}
-
-/// Model for emergency alerts shown on the map
-class EmergencyAlert {
-  final String id;
-  final String userId;
-  final String userEmail;
-  final double lon;
-  final double lat;
-  final List<String> services;
-  final String description;
-  final String status;
-  final DateTime? createdAt;
-
-  const EmergencyAlert({
-    required this.id,
-    required this.userId,
-    required this.userEmail,
-    required this.lon,
-    required this.lat,
-    required this.services,
-    required this.description,
-    required this.status,
-    this.createdAt,
-  });
-}
+import '../models/facility_pin.dart';
+import '../models/emergency_alert.dart';
 
 /// Controller to expose imperative actions from MapView to parent widgets.
 class MapViewController {

@@ -1,0 +1,48 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "lighthouse-2498c",
+          "appId": "1:572669546401:android:87a083b14672d9e11845e0",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "lighthouse-2498c",
+          "configurations": {
+            "android": "1:572669546401:android:87a083b14672d9e11845e0",
+            "ios": "1:572669546401:ios:2b78e4b698be7f6f1845e0",
+            "web": "1:572669546401:web:7830430c557c6edb1845e0",
+            "windows": "1:572669546401:web:9a4b0472ea8b59de1845e0"
+          }
+        }
+      }
+    }
+  },
+  "functions": {
+    "source": "functions",
+    "codebase": "default",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firebase-debug.*.log"
+    ]
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

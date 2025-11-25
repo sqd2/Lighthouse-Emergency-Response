@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "572669546401",
+    "project_id": "lighthouse-2498c",
+    "storage_bucket": "lighthouse-2498c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:572669546401:android:87a083b14672d9e11845e0",
+        "android_client_info": {
+          "package_name": "com.example.ligthouse"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvCmKXiO6UvBtqdu6YSzqV-NbzyICXOHU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
