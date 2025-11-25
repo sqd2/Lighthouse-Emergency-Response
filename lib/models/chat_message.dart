@@ -4,7 +4,10 @@ class ChatMessage {
   final String senderId;
   final String senderEmail;
   final String senderRole; // 'citizen' or 'dispatcher'
-  final String message;
+  final String messageType; // 'text', 'image', 'voice'
+  final String message; // For text messages or caption
+  final String? mediaUrl; // URL for image or voice file
+  final int? voiceDuration; // Duration in seconds for voice messages
   final DateTime timestamp;
   final bool isRead;
 
@@ -13,7 +16,10 @@ class ChatMessage {
     required this.senderId,
     required this.senderEmail,
     required this.senderRole,
+    this.messageType = 'text',
     required this.message,
+    this.mediaUrl,
+    this.voiceDuration,
     required this.timestamp,
     this.isRead = false,
   });
@@ -23,7 +29,10 @@ class ChatMessage {
       'senderId': senderId,
       'senderEmail': senderEmail,
       'senderRole': senderRole,
+      'messageType': messageType,
       'message': message,
+      'mediaUrl': mediaUrl,
+      'voiceDuration': voiceDuration,
       'timestamp': timestamp,
       'isRead': isRead,
     };
@@ -35,7 +44,10 @@ class ChatMessage {
       senderId: data['senderId'] ?? '',
       senderEmail: data['senderEmail'] ?? '',
       senderRole: data['senderRole'] ?? '',
+      messageType: data['messageType'] ?? 'text',
       message: data['message'] ?? '',
+      mediaUrl: data['mediaUrl'],
+      voiceDuration: data['voiceDuration'],
       timestamp: (data['timestamp'] as dynamic)?.toDate() ?? DateTime.now(),
       isRead: data['isRead'] ?? false,
     );
