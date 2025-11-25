@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../places_service.dart';
+import 'chat_screen.dart';
 
 /// SOS submission sheet for citizens
 class SOSSheet extends StatefulWidget {
@@ -524,6 +525,26 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
                     ],
                   ),
                 ),
+                if (isAccepted)
+                  IconButton(
+                    icon: Icon(
+                      Icons.chat_bubble_outline,
+                      color: Colors.green.shade700,
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                            alertId: widget.alertId,
+                            userRole: 'citizen',
+                            otherPartyEmail: acceptedByEmail ?? 'Dispatcher',
+                          ),
+                        ),
+                      );
+                    },
+                    tooltip: 'Chat with dispatcher',
+                  ),
                 IconButton(
                   icon: Icon(
                     Icons.info_outline,
