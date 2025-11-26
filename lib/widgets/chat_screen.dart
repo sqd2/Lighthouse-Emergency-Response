@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,7 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 
 /// Chat screen for communication between dispatcher and citizen
@@ -110,16 +110,12 @@ class _ChatScreenState extends State<ChatScreen> {
           .child(widget.alertId)
           .child('${DateTime.now().millisecondsSinceEpoch}.jpg');
 
-      UploadTask uploadTask;
-      if (kIsWeb) {
-        final bytes = await image.readAsBytes();
-        uploadTask = storageRef.putData(
-          bytes,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-      } else {
-        uploadTask = storageRef.putFile(File(image.path));
-      }
+      // Use putData for all platforms (works on both web and mobile)
+      final bytes = await image.readAsBytes();
+      final uploadTask = storageRef.putData(
+        bytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
 
       final snapshot = await uploadTask;
       final imageUrl = await snapshot.ref.getDownloadURL();
@@ -164,9 +160,8 @@ class _ChatScreenState extends State<ChatScreen> {
             path: path,
           );
         } else {
-          // For mobile/desktop, use temporary directory
-          final directory = await getTemporaryDirectory();
-          path = '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          // For mobile/desktop, use simple path
+          path = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
           await _audioRecorder.start(
             const RecordConfig(encoder: AudioEncoder.aacLc),
@@ -205,13 +200,6 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      // For web, show a message that voice is not supported yet
-      if (kIsWeb) {
-        setState(() => _isRecording = false);
-        _showError('Voice messages are not supported on web. Please use mobile app for voice messages.');
-        return;
-      }
-
       setState(() {
         _isRecording = false;
         _isSending = true;
@@ -225,9 +213,27 @@ class _ChatScreenState extends State<ChatScreen> {
           .ref()
           .child('chat_voice')
           .child(widget.alertId)
-          .child('${DateTime.now().millisecondsSinceEpoch}.m4a');
+          .child('${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? "wav" : "m4a"}');
 
-      final uploadTask = storageRef.putFile(File(path));
+      // Get audio bytes and upload (web only for now)
+      if (!kIsWeb) {
+        throw Exception('Voice recording is only supported on web platform');
+      }
+
+      // For web, the path is a blob URL - fetch it
+      Uint8List bytes;
+      if (path.startsWith('blob:')) {
+        final response = await http.get(Uri.parse(path));
+        bytes = response.bodyBytes;
+      } else {
+        throw Exception('Unexpected web recording path format: $path');
+      }
+
+      final uploadTask = storageRef.putData(
+        bytes,
+        SettableMetadata(contentType: 'audio/wav'),
+      );
+
       final snapshot = await uploadTask;
       final voiceUrl = await snapshot.ref.getDownloadURL();
 
@@ -514,8 +520,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     tooltip: 'Send image',
                   ),
 
-                  // Voice button (hidden on web)
-                  if (!kIsWeb)
+                  // Voice button (web only)
+                  if (kIsWeb)
                     IconButton(
                       icon: Icon(
                         _isRecording ? Icons.mic : Icons.mic_none,
@@ -660,35 +666,38 @@ class _MessageBubbleState extends State<_MessageBubble> {
   Widget _buildMessageContent() {
     switch (widget.message.messageType) {
       case 'image':
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.network(
-            widget.message.mediaUrl!,
-            width: 200,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                width: 200,
-                height: 200,
-                alignment: Alignment.center,
-                child: CircularProgressIndicator(
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded /
-                          loadingProgress.expectedTotalBytes!
-                      : null,
-                ),
-              );
-            },
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: 200,
-                height: 200,
-                color: Colors.grey.shade300,
-                alignment: Alignment.center,
-                child: const Icon(Icons.error, color: Colors.red),
-              );
-            },
+        return GestureDetector(
+          onTap: () => _showEnlargedImage(context, widget.message.mediaUrl!),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              widget.message.mediaUrl!,
+              width: 200,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  width: 200,
+                  height: 200,
+                  alignment: Alignment.center,
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                            loadingProgress.expectedTotalBytes!
+                        : null,
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  width: 200,
+                  height: 200,
+                  color: Colors.grey.shade300,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.error, color: Colors.red),
+                );
+              },
+            ),
           ),
         );
 
@@ -743,6 +752,58 @@ class _MessageBubbleState extends State<_MessageBubble> {
           ),
         );
     }
+  }
+
+  void _showEnlargedImage(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Stack(
+          children: [
+            // Dismiss on background tap
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                color: Colors.black.withOpacity(0.8),
+              ),
+            ),
+            // Centered image
+            Center(
+              child: InteractiveViewer(
+                panEnabled: true,
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            // Close button
+            Positioned(
+              top: 40,
+              right: 20,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
