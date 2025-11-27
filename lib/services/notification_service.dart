@@ -9,33 +9,39 @@ class NotificationService {
 
   /// Initialize notifications and request permissions
   static Future<void> initialize() async {
-    // Request permission
-    NotificationSettings settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
+    try {
+      // Request permission
+      NotificationSettings settings = await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,
+      );
 
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('User granted notification permission');
+      print('Notification permission status: ${settings.authorizationStatus}');
 
-      // Get and save FCM token
-      await updateFCMToken();
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        print('User granted notification permission');
 
-      // Listen for token refresh
-      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-        print('FCM token refreshed: $newToken');
-        _saveFCMToken(newToken);
-      });
+        // Get and save FCM token
+        await updateFCMToken();
 
-      // Handle foreground messages
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        print('Received foreground message: ${message.notification?.title}');
-        // Messages will be shown by browser notification API on web
-      });
-    } else {
-      print('User declined notification permission');
+        // Listen for token refresh
+        FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+          print('FCM token refreshed: $newToken');
+          _saveFCMToken(newToken);
+        });
+
+        // Handle foreground messages
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          print('Received foreground message: ${message.notification?.title}');
+          // Messages will be shown by browser notification API on web
+        });
+      } else {
+        print('User declined notification permission: ${settings.authorizationStatus}');
+      }
+    } catch (e) {
+      print('Error initializing notifications: $e');
     }
   }
 

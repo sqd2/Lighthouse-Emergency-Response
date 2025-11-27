@@ -41,12 +41,19 @@ class _CitizenDashboardState extends State<CitizenDashboard>
         }
       },
     );
-    _initializeNotifications();
     _setUserRole();
+    // Delay notification initialization to ensure Firebase is ready
+    Future.delayed(const Duration(seconds: 2), () {
+      _initializeNotifications();
+    });
   }
 
   Future<void> _initializeNotifications() async {
-    await NotificationService.initialize();
+    try {
+      await NotificationService.initialize();
+    } catch (e) {
+      print('Failed to initialize notifications in citizen dashboard: $e');
+    }
   }
 
   Future<void> _setUserRole() async {
