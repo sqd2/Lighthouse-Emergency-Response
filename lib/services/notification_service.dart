@@ -48,12 +48,13 @@ class NotificationService {
       String? token;
 
       if (kIsWeb) {
-        // For web, try to get token
-        // VAPID key should be added in Firebase Console: Project Settings > Cloud Messaging > Web Push certificates
+        // For web, get token with VAPID key
         try {
-          token = await _messaging.getToken();
+          token = await _messaging.getToken(
+            vapidKey: 'BKv4RxnCncYJ6C4Pu5cgx6bMSw6wjC798s6e02Np9fSTLzaSrC8XTsESJuXNZDHQmR7ob6zYPqXlVmgMKN94eOA',
+          );
         } catch (e) {
-          print('Error getting web FCM token (VAPID key may be missing): $e');
+          print('Error getting web FCM token: $e');
           // Continue without token for now
         }
       } else {
