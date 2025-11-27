@@ -12,36 +12,50 @@ class FCMWeb {
           try {
             // Wait for service worker to be ready
             const registration = await navigator.serviceWorker.ready;
-            console.log('Service worker is ready');
+            console.log('✅ Service worker is ready:', registration.scope);
 
             // Import Firebase libraries if not already loaded
             if (typeof firebase === 'undefined') {
-              console.error('Firebase not loaded');
+              console.error('❌ Firebase not loaded');
               return null;
             }
 
+            console.log('✅ Firebase SDK loaded');
+
             // Get messaging instance
             const messaging = firebase.messaging();
+
+            // Set VAPID key
+            messaging.usePublicVapidKey('$vapidKey');
+            console.log('✅ VAPID key configured');
 
             // Request permission
             const permission = await Notification.requestPermission();
             console.log('Notification permission:', permission);
 
             if (permission !== 'granted') {
-              console.log('Notification permission denied');
+              console.log('❌ Notification permission denied');
               return null;
             }
 
-            // Get token
+            console.log('⏳ Requesting FCM token from Firebase...');
+
+            // Get token with service worker registration
             const token = await messaging.getToken({
-              vapidKey: '$vapidKey',
               serviceWorkerRegistration: registration
             });
 
-            console.log('FCM Token obtained:', token ? token.substring(0, 20) + '...' : 'null');
-            return token;
+            if (token) {
+              console.log('✅ FCM Token obtained successfully!');
+              console.log('📋 Full FCM Token:', token);
+              return token;
+            } else {
+              console.log('❌ No token returned from Firebase');
+              return null;
+            }
           } catch (error) {
-            console.error('Error getting FCM token:', error);
+            console.error('❌ Error getting FCM token:', error.name, '-', error.message);
+            console.error('Error details:', error);
             return null;
           }
         })()
