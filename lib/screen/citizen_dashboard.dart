@@ -9,6 +9,7 @@ import '../widgets/facility_details_widget.dart';
 import '../models/facility_pin.dart';
 import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
+import '../services/notification_service.dart';
 import '../places_service.dart';
 import '../directions_service.dart';
 import 'login_screen.dart';
@@ -40,6 +41,25 @@ class _CitizenDashboardState extends State<CitizenDashboard>
         }
       },
     );
+    _initializeNotifications();
+    _setUserRole();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await NotificationService.initialize();
+  }
+
+  Future<void> _setUserRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set({
+      'role': 'citizen',
+      'email': user.email,
+    }, SetOptions(merge: true));
   }
 
   @override

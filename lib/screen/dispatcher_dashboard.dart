@@ -9,6 +9,7 @@ import '../models/facility_pin.dart';
 import '../models/emergency_alert.dart';
 import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
+import '../services/notification_service.dart';
 import 'add_facility_screen.dart';
 import 'edit_profile_screen.dart';
 
@@ -27,6 +28,9 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   // Add Mode toggle: when true, MapView captures the next tap for temp pin
   bool _addMode = false;
 
+  // Active status: when true, dispatcher receives SOS notifications
+  bool _isActive = false;
+
   // Controller to clear the temporary pin on Cancel/Add
   final _mapController = MapViewController();
 
@@ -43,6 +47,61 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         }
       },
     );
+    _initializeNotifications();
+    _loadActiveStatus();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await NotificationService.initialize();
+  }
+
+  Future<void> _loadActiveStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    if (doc.exists && mounted) {
+      setState(() {
+        _isActive = doc.data()?['isActive'] ?? false;
+      });
+    }
+  }
+
+  Future<void> _toggleActiveStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final newStatus = !_isActive;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set({
+      'isActive': newStatus,
+      'role': 'dispatcher',
+      'email': user.email,
+    }, SetOptions(merge: true));
+
+    setState(() {
+      _isActive = newStatus;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newStatus
+                ? 'You are now ACTIVE - will receive SOS notifications'
+                : 'You are now INACTIVE - will not receive SOS notifications',
+          ),
+          backgroundColor: newStatus ? Colors.green : Colors.grey,
+        ),
+      );
+    }
   }
 
   @override
@@ -317,6 +376,21 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         mainAxisAlignment: MainAxisAlignment.end,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Active/Inactive toggle
+          FloatingActionButton.extended(
+            heroTag: 'active_status',
+            backgroundColor: _isActive ? Colors.green : Colors.grey,
+            icon: Icon(
+              _isActive ? Icons.notifications_active : Icons.notifications_off,
+              color: Colors.white,
+            ),
+            label: Text(
+              _isActive ? 'Active' : 'Inactive',
+              style: const TextStyle(color: Colors.white),
+            ),
+            onPressed: _toggleActiveStatus,
+          ),
+          const SizedBox(height: 16),
           // Recenter button
           FloatingActionButton.small(
             heroTag: 'recenter',
