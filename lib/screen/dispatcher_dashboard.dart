@@ -47,12 +47,19 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         }
       },
     );
-    _initializeNotifications();
     _loadActiveStatus();
+    // Delay notification initialization to ensure Firebase is ready
+    Future.delayed(const Duration(seconds: 2), () {
+      _initializeNotifications();
+    });
   }
 
   Future<void> _initializeNotifications() async {
-    await NotificationService.initialize();
+    try {
+      await NotificationService.initialize();
+    } catch (e) {
+      print('Failed to initialize notifications in dispatcher dashboard: $e');
+    }
   }
 
   Future<void> _loadActiveStatus() async {
