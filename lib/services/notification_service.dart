@@ -57,11 +57,16 @@ class NotificationService {
       String? token;
 
       if (kIsWeb) {
-        // For web, skip FCM tokens for now - web notifications not fully supported
-        print('Web platform detected - FCM tokens not supported on web yet');
-        return;
+        // For web, get token with VAPID key
+        print('Requesting FCM token for web...');
+        token = await _messaging.getToken(
+          vapidKey: 'BKv4RxnCncYJ6C4Pu5cgx6bMSw6wjC798s6e02Np9fSTLzaSrC8XTsESJuXNZDHQmR7ob6zYPqXlVmgMKN94eOA',
+        );
+        print('Web FCM token received: ${token?.substring(0, 20)}...');
       } else {
+        print('Requesting FCM token for mobile...');
         token = await _messaging.getToken();
+        print('Mobile FCM token received');
       }
 
       if (token != null) {
