@@ -36,40 +36,39 @@ mixin LocationTrackingMixin<T extends StatefulWidget> on State<T> {
   }
 
   /// Start continuous location tracking
-  void _startLocationTracking({
-    Function(Position)? onLocationUpdate,
-  }) {
-    _positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
-    ).listen((Position newPosition) {
-      if (!mounted) return;
+  void _startLocationTracking({Function(Position)? onLocationUpdate}) {
+    _positionStreamSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          ),
+        ).listen((Position newPosition) {
+          if (!mounted) return;
 
-      // Check if user has moved far enough to warrant refreshing facilities
-      if (_userLocation != null) {
-        final distance = PlacesService.calculateDistance(
-          _userLocation!.latitude,
-          _userLocation!.longitude,
-          newPosition.latitude,
-          newPosition.longitude,
-        );
+          // Check if user has moved far enough to warrant refreshing facilities
+          if (_userLocation != null) {
+            final distance = PlacesService.calculateDistance(
+              _userLocation!.latitude,
+              _userLocation!.longitude,
+              newPosition.latitude,
+              newPosition.longitude,
+            );
 
-        // Only refresh if moved more than threshold
-        if (distance >= _refreshDistanceThreshold) {
+            // Only refresh if moved more than threshold
+            if (distance >= _refreshDistanceThreshold) {
+              _userLocation = newPosition;
+              _refreshFacilities(newPosition);
+            }
+          } else {
+            _userLocation = newPosition;
+          }
+
           _userLocation = newPosition;
-          _refreshFacilities(newPosition);
-        }
-      } else {
-        _userLocation = newPosition;
-      }
 
-      _userLocation = newPosition;
-
-      // Call the optional callback for additional processing
-      onLocationUpdate?.call(newPosition);
-    });
+          // Call the optional callback for additional processing
+          onLocationUpdate?.call(newPosition);
+        });
   }
 
   /// Fetch initial user location and Google Places facilities
@@ -101,7 +100,7 @@ mixin LocationTrackingMixin<T extends StatefulWidget> on State<T> {
       // Fall through to use mock location
     }
 
-    // If we don't have a position, use mock location (Kuala Lumpur)
+    // if no location (due to perms or else) use mock location (mid KL)
     if (position == null) {
       print('Using mock location (Kuala Lumpur)');
       position = Position(
