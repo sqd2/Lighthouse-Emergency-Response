@@ -1,14 +1,15 @@
 importScripts("https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js");
 importScripts("https://www.gstatic.com/firebasejs/8.10.0/firebase-messaging.js");
 
-// Initialize the Firebase app in the service worker
+// Initialize the Firebase app in the service worker with Firebase-generated API key
 firebase.initializeApp({
-  apiKey: "GOOGLE_MAPS_API_KEY",
+  apiKey: "AIzaSyBOawlsvCMxrDlC8fV2oUnja_fd3bXd4gY",
   authDomain: "lighthouse-2498c.firebaseapp.com",
   projectId: "lighthouse-2498c",
   storageBucket: "lighthouse-2498c.firebasestorage.app",
   messagingSenderId: "572669546401",
-  appId: "1:572669546401:web:7830430c557c6edb1845e0"
+  appId: "1:572669546401:web:7830430c557c6edb1845e0",
+  measurementId: "G-NET6W8XQD4"
 });
 
 // Retrieve an instance of Firebase Messaging so that it can handle background messages
