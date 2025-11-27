@@ -2,6 +2,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'fcm_web.dart' if (dart.library.io) 'fcm_web_stub.dart';
 
 /// Service to handle Firebase Cloud Messaging notifications
 class NotificationService {
@@ -57,12 +58,17 @@ class NotificationService {
       String? token;
 
       if (kIsWeb) {
-        // For web, get token with VAPID key
-        print('Requesting FCM token for web...');
-        token = await _messaging.getToken(
-          vapidKey: 'BKv4RxnCncYJ6C4Pu5cgx6bMSw6wjC798s6e02Np9fSTLzaSrC8XTsESJuXNZDHQmR7ob6zYPqXlVmgMKN94eOA',
+        // For web, use JavaScript interop to get token
+        print('Requesting FCM token for web using JavaScript SDK...');
+        token = await FCMWeb.getToken(
+          'BKv4RxnCncYJ6C4Pu5cgx6bMSw6wjC798s6e02Np9fSTLzaSrC8XTsESJuXNZDHQmR7ob6zYPqXlVmgMKN94eOA',
         );
-        print('Web FCM token received: ${token?.substring(0, 20)}...');
+        if (token != null) {
+          print('✅ FCM Token obtained successfully!');
+          print('📋 Full FCM Token (for Firebase test device): $token');
+        } else {
+          print('❌ Failed to obtain FCM token');
+        }
       } else {
         print('Requesting FCM token for mobile...');
         token = await _messaging.getToken();

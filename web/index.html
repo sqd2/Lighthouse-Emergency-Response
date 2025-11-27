@@ -42,6 +42,22 @@
 
   <!-- Google Maps JavaScript API -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCvvz3UmQXQR9PzRUeYlNu2wJqpxG8FvuQ"></script>
+
+  <!-- Firebase SDKs for JavaScript -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-messaging.js"></script>
+  <script>
+    // Initialize Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyCvvz3UmQXQR9PzRUeYlNu2wJqpxG8FvuQ",
+      authDomain: "lighthouse-2498c.firebaseapp.com",
+      projectId: "lighthouse-2498c",
+      storageBucket: "lighthouse-2498c.firebasestorage.app",
+      messagingSenderId: "572669546401",
+      appId: "1:572669546401:web:7830430c557c6edb1845e0"
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
