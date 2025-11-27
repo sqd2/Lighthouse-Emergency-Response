@@ -49,26 +49,25 @@ class NotificationService {
   static Future<void> updateFCMToken() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        print('No user logged in, skipping FCM token');
+        return;
+      }
 
       String? token;
 
       if (kIsWeb) {
-        // For web, get token with VAPID key
-        try {
-          token = await _messaging.getToken(
-            vapidKey: 'BKv4RxnCncYJ6C4Pu5cgx6bMSw6wjC798s6e02Np9fSTLzaSrC8XTsESJuXNZDHQmR7ob6zYPqXlVmgMKN94eOA',
-          );
-        } catch (e) {
-          print('Error getting web FCM token: $e');
-          // Continue without token for now
-        }
+        // For web, skip FCM tokens for now - web notifications not fully supported
+        print('Web platform detected - FCM tokens not supported on web yet');
+        return;
       } else {
         token = await _messaging.getToken();
       }
 
       if (token != null) {
         await _saveFCMToken(token);
+      } else {
+        print('No FCM token received');
       }
     } catch (e) {
       print('Error updating FCM token: $e');

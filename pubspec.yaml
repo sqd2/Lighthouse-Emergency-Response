@@ -39,6 +39,7 @@ dependencies:
   cloud_firestore: ^6.0.2
   firebase_storage: ^13.0.3
   firebase_messaging: ^16.0.3
+  firebase_messaging_web: ^4.0.3
   http: ^1.2.0
   # Image and media
   image_picker: ^1.0.7
