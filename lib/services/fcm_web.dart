@@ -24,10 +24,7 @@ class FCMWeb {
 
             // Get messaging instance
             const messaging = firebase.messaging();
-
-            // Set VAPID key
-            messaging.usePublicVapidKey('$vapidKey');
-            console.log('✅ VAPID key configured');
+            console.log('✅ Messaging instance created');
 
             // Request permission
             const permission = await Notification.requestPermission();
@@ -38,10 +35,11 @@ class FCMWeb {
               return null;
             }
 
-            console.log('⏳ Requesting FCM token from Firebase...');
+            console.log('⏳ Requesting FCM token from Firebase with VAPID key...');
 
-            // Get token with service worker registration
+            // Get token with VAPID key and service worker registration
             const token = await messaging.getToken({
+              vapidKey: '$vapidKey',
               serviceWorkerRegistration: registration
             });
 

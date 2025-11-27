@@ -14,9 +14,6 @@ firebase.initializeApp({
 // Retrieve an instance of Firebase Messaging so that it can handle background messages
 const messaging = firebase.messaging();
 
-// Set the VAPID key for push notifications
-messaging.usePublicVapidKey('BKv4RxnCncYJ6C4Pu5cgx6bMSw6wjC798s6e02Np9fSTLzaSrC8XTsESJuXNZDHQmR7ob6zYPqXlVmgMKN94eOA');
-
 // Handle background messages
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message', payload);
