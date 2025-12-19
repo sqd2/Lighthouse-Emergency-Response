@@ -7,42 +7,150 @@ import 'fcm_web.dart' if (dart.library.io) 'fcm_web_stub.dart';
 /// Service to handle Firebase Cloud Messaging notifications
 class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  static bool _isInitialized = false;
+  static bool _listenerSetup = false;
+  static bool _tokenSaveInProgress = false;
+  static String? _lastSavedToken;
 
   /// Initialize notifications and request permissions
   static Future<void> initialize() async {
+    if (_isInitialized) {
+      print('⚠️ Notification Service already initialized, skipping...');
+      return;
+    }
+
     try {
-      // Request permission
-      NotificationSettings settings = await _messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false,
-      );
+      print('=== Initializing Notification Service ===');
+      print('Platform: ${kIsWeb ? "Web" : "Mobile"}');
+      _isInitialized = true;
 
-      print('Notification permission status: ${settings.authorizationStatus}');
+      if (kIsWeb) {
+        // On web, check browser permission directly via JS (don't request)
+        print('Checking web notification permission via browser API...');
+        final permission = await FCMWeb.checkBrowserPermission();
+        print('Browser permission: $permission');
 
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        print('User granted notification permission');
-
-        // Get and save FCM token
-        await updateFCMToken();
-
-        // Listen for token refresh
-        FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-          print('FCM token refreshed: $newToken');
-          _saveFCMToken(newToken);
-        });
-
-        // Handle foreground messages
-        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-          print('Received foreground message: ${message.notification?.title}');
-          // Messages will be shown by browser notification API on web
-        });
+        if (permission == 'granted') {
+          print('User already granted notification permission');
+          print('Setting up notifications and refreshing token...');
+          await _setupNotifications();
+        } else {
+          print('Notification permission not granted - user needs to tap Enable button');
+        }
       } else {
-        print('User declined notification permission: ${settings.authorizationStatus}');
+        // On mobile, use Firebase Messaging API
+        NotificationSettings settings = await _messaging.getNotificationSettings();
+        print('Current notification permission: ${settings.authorizationStatus}');
+
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          print('User already granted notification permission');
+          await _setupNotifications();
+        } else if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+          print('Notification permission not determined');
+          await requestPermission();
+        } else {
+          print('Notification permission denied: ${settings.authorizationStatus}');
+        }
       }
     } catch (e) {
       print('Error initializing notifications: $e');
+    }
+  }
+
+  /// Request notification permission (call from button tap)
+  static Future<bool> requestPermission() async {
+    try {
+      print('Requesting notification permission...');
+      print('Platform: ${kIsWeb ? "Web" : "Mobile"}');
+
+      if (kIsWeb) {
+        // On web, request browser permission first
+        print('Requesting browser notification permission via JS...');
+        final browserPermission = await FCMWeb.requestBrowserPermission();
+        print('Browser permission result: $browserPermission');
+
+        if (browserPermission == 'granted') {
+          print('✅ Browser permission granted, setting up FCM...');
+          await _setupNotifications();
+          return true;
+        } else {
+          print('❌ Browser permission not granted: $browserPermission');
+          return false;
+        }
+      } else {
+        // On mobile, use Firebase Messaging API
+        NotificationSettings settings = await _messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+          provisional: false,
+        );
+
+        print('Notification permission status: ${settings.authorizationStatus}');
+
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          print('User granted notification permission');
+          await _setupNotifications();
+          return true;
+        } else {
+          print('User declined notification permission: ${settings.authorizationStatus}');
+          return false;
+        }
+      }
+    } catch (e) {
+      print('Error requesting notification permission: $e');
+      print('Error stack trace: ${StackTrace.current}');
+      return false;
+    }
+  }
+
+  /// Setup notifications after permission granted
+  static Future<void> _setupNotifications() async {
+    try {
+      // Set up foreground listener for web (only once)
+      if (kIsWeb && !_listenerSetup) {
+        print('Setting up foreground listener for the first time...');
+        await FCMWeb.setupForegroundListener();
+        _listenerSetup = true;
+      } else if (kIsWeb && _listenerSetup) {
+        print('⚠️ Foreground listener already set up, skipping...');
+      }
+
+      // Get and save FCM token
+      await updateFCMToken();
+
+      // Listen for token refresh
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        print('FCM token refreshed: $newToken');
+        _saveFCMToken(newToken);
+      });
+
+      // Handle foreground messages (only for mobile, web uses JS SDK)
+      if (!kIsWeb) {
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          print('Received foreground message: ${message.notification?.title}');
+        });
+      }
+    } catch (e) {
+      print('Error setting up notifications: $e');
+    }
+  }
+
+  /// Check if notifications are enabled
+  static Future<bool> areNotificationsEnabled() async {
+    try {
+      if (kIsWeb) {
+        // On web, check browser permission directly (don't request)
+        final permission = await FCMWeb.checkBrowserPermission();
+        return permission == 'granted';
+      } else {
+        // On mobile, use Firebase Messaging API
+        NotificationSettings settings = await _messaging.getNotificationSettings();
+        return settings.authorizationStatus == AuthorizationStatus.authorized;
+      }
+    } catch (e) {
+      print('Error checking notification status: $e');
+      return false;
     }
   }
 
@@ -87,21 +195,66 @@ class NotificationService {
 
   /// Save FCM token to Firestore
   static Future<void> _saveFCMToken(String token) async {
+    // Prevent duplicate saves of the same token
+    if (_tokenSaveInProgress) {
+      print('⚠️ Token save already in progress, skipping duplicate...');
+      return;
+    }
+
+    if (_lastSavedToken == token) {
+      print('⚠️ Token already saved recently, skipping duplicate...');
+      return;
+    }
+
+    _tokenSaveInProgress = true;
+
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        _tokenSaveInProgress = false;
+        return;
+      }
 
-      await FirebaseFirestore.instance
+      // Create token object with metadata
+      // Note: Can't use FieldValue.serverTimestamp() inside arrays
+      final tokenData = {
+        'token': token,
+        'platform': kIsWeb ? 'web' : 'mobile',
+        'lastUpdated': DateTime.now().millisecondsSinceEpoch,
+      };
+
+      final userDoc = FirebaseFirestore.instance
           .collection('users')
-          .doc(user.uid)
-          .set({
-        'fcmToken': token,
+          .doc(user.uid);
+
+      // Get current tokens
+      final snapshot = await userDoc.get();
+      final data = snapshot.data();
+      List<dynamic> currentTokens = data?['fcmTokens'] ?? [];
+
+      // Remove any existing entries with the same token (to avoid duplicates)
+      currentTokens.removeWhere((t) => t['token'] == token);
+
+      // Add new token
+      currentTokens.add(tokenData);
+
+      // Save updated tokens array
+      await userDoc.set({
+        'fcmTokens': currentTokens,
         'lastTokenUpdate': FieldValue.serverTimestamp(),
+        // Keep old fcmToken field for backward compatibility
+        'fcmToken': token,
       }, SetOptions(merge: true));
 
-      print('FCM token saved successfully');
+      _lastSavedToken = token;
+
+      print('✅ FCM token saved to array (${currentTokens.length} total devices)');
+      print('   Token: ${token.substring(0, 20)}...');
+      print('   Platform: ${kIsWeb ? "web" : "mobile"}');
     } catch (e) {
       print('Error saving FCM token: $e');
+    } finally {
+      _tokenSaveInProgress = false;
     }
   }
 
