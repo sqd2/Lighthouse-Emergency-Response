@@ -15,16 +15,55 @@ firebase.initializeApp({
 // Retrieve an instance of Firebase Messaging so that it can handle background messages
 const messaging = firebase.messaging();
 
-// Handle background messages
-messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message', payload);
+// Handle background messages - coordinate with page to avoid duplicates
+messaging.onBackgroundMessage(async (payload) => {
+  console.log('[SW] Background message received:', payload);
 
-  const notificationTitle = payload.notification?.title || 'New Notification';
+  // Try to notify page first - let it handle the notification
+  const clients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true
+  });
+
+  console.log('[SW] Found clients:', clients.length);
+
+  if (clients.length > 0) {
+    console.log('[SW] Page is open - sending message to page');
+
+    for (const client of clients) {
+      try {
+        client.postMessage({
+          type: 'FCM_MESSAGE',
+          payload: payload
+        });
+        console.log('[SW] Message sent to page');
+      } catch (error) {
+        console.log('[SW] Failed to send to client:', error);
+      }
+    }
+
+    console.log('[SW] Returning - page will handle notification');
+    return; // CRITICAL: Return early to prevent showing notification
+  }
+
+  // No clients - page is closed, show notification from service worker
+  console.log('[SW] Page is closed - showing notification from service worker');
+
+  // Extract title and body from data field (data-only messages)
+  const notificationTitle = payload.data?.title || payload.notification?.title || 'New Notification';
+  const notificationBody = payload.data?.body || payload.notification?.body || 'You have a new message';
+
   const notificationOptions = {
-    body: payload.notification?.body || 'You have a new message',
+    body: notificationBody,
     icon: '/icons/Icon-192.png',
-    badge: '/icons/Icon-192.png'
+    badge: '/icons/Icon-192.png',
+    tag: 'lighthouse-notif',
+    requireInteraction: false,
+    renotify: false
   };
 
+  console.log('[SW] Showing notification:', notificationTitle);
   return self.registration.showNotification(notificationTitle, notificationOptions);
 });
+
+console.log('[SW] Service worker ready');

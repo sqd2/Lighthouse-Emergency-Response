@@ -38,6 +38,8 @@ class MapView extends StatefulWidget {
     this.onEmergencyAlertTap,
     this.followUserLocation = true,
     this.routePolyline,
+    this.dispatcherLocation,
+    this.dispatcherName,
   });
 
   /// When true, a tap places a temporary pin and calls [onMapTap].
@@ -65,6 +67,12 @@ class MapView extends StatefulWidget {
   /// Route polyline to display on map
   final Polyline? routePolyline;
 
+  /// Dispatcher location (live updating)
+  final LatLng? dispatcherLocation;
+
+  /// Dispatcher name/email for label
+  final String? dispatcherName;
+
   @override
   State<MapView> createState() => _MapViewState();
 }
@@ -84,6 +92,7 @@ class _MapViewState extends State<MapView> {
   // Custom marker icons
   BitmapDescriptor? _userLocationIcon;
   BitmapDescriptor? _sosAlertIcon;
+  BitmapDescriptor? _dispatcherLocationIcon;
 
   // Facility marker icons by type
   final Map<String, BitmapDescriptor> _facilityIcons = {};
@@ -135,6 +144,14 @@ class _MapViewState extends State<MapView> {
         borderWidth: 2.5,
       );
       print('SOS alert icon created');
+
+      _dispatcherLocationIcon = await _createCircularMarker(
+        color: const Color(0xFF34A853), // Green for dispatcher (en route)
+        size: size,
+        borderColor: Colors.white,
+        borderWidth: 2.5,
+      );
+      print('Dispatcher location icon created');
 
       // Create facility markers (only for web, native uses defaultMarkerWithHue)
       if (kIsWeb) {
@@ -299,9 +316,20 @@ class _MapViewState extends State<MapView> {
       widget.controller?.recenterOnUserLocationCallback =
           _recenterOnUserLocationInternal;
     }
-    // Redraw when facilities or alerts list changes
+
+    // Check for dispatcher location changes
+    final dispatcherChanged = oldWidget.dispatcherLocation != widget.dispatcherLocation;
+    if (dispatcherChanged) {
+      print('MapView: Dispatcher location changed!');
+      print('  Old: ${oldWidget.dispatcherLocation}');
+      print('  New: ${widget.dispatcherLocation}');
+    }
+
+    // Redraw when facilities, alerts, or dispatcher location changes
     if (oldWidget.facilities != widget.facilities ||
-        oldWidget.emergencyAlerts != widget.emergencyAlerts) {
+        oldWidget.emergencyAlerts != widget.emergencyAlerts ||
+        dispatcherChanged) {
+      print('MapView: Updating markers (dispatcher: $dispatcherChanged)');
       _updateMarkers();
     }
   }
@@ -566,6 +594,21 @@ class _MapViewState extends State<MapView> {
           zIndex: 75,
         );
       }
+    }
+
+    // Dispatcher location marker (green circular dot)
+    if (widget.dispatcherLocation != null && _dispatcherLocationIcon != null) {
+      markers['dispatcher'] = Marker(
+        markerId: const MarkerId('dispatcher'),
+        position: widget.dispatcherLocation!,
+        icon: _dispatcherLocationIcon!,
+        anchor: const Offset(0.5, 0.5), // Center the circular marker
+        infoWindow: InfoWindow(
+          title: widget.dispatcherName ?? 'Dispatcher',
+          snippet: 'Help is on the way!',
+        ),
+        zIndex: 95,
+      );
     }
 
     // Temp pin marker (red pin)

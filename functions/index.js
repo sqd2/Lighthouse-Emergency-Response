@@ -8,6 +8,38 @@ admin.initializeApp();
 
 const GOOGLE_API_KEY = "GOOGLE_MAPS_API_KEY";
 
+// Maximum number of dispatchers to notify (nearest ones)
+const MAX_DISPATCHERS_TO_NOTIFY = 5;
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * Returns distance in kilometers
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+
+  return distance;
+}
+
+/**
+ * Convert degrees to radians
+ */
+function toRadians(degrees) {
+  return degrees * (Math.PI / 180);
+}
+
 /**
  * Cloud Function to proxy Google Places API requests
  * This avoids CORS issues when calling from web browsers
@@ -272,12 +304,33 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
 
 /**
  * Cloud Function: Notify active dispatchers when a new SOS is created
+ * Uses proximity-based assignment to notify only the nearest dispatchers
  */
 exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (event) => {
   const alertData = event.data.data();
   const alertId = event.params.alertId;
 
   console.log(`🚨 New SOS created: ${alertId} from ${alertData.userEmail}`);
+
+  // Extract lat/lon from GeoPoint or separate fields (backward compatibility)
+  let alertLat, alertLon;
+  if (alertData.location) {
+    // New format: GeoPoint in location field
+    alertLat = alertData.location.latitude;
+    alertLon = alertData.location.longitude;
+  } else if (alertData.lat && alertData.lon) {
+    // Old format: separate lat/lon fields
+    alertLat = alertData.lat;
+    alertLon = alertData.lon;
+  }
+
+  console.log(`📍 Alert location: ${alertLat}, ${alertLon}`);
+
+  // Validate alert location data
+  if (!alertLat || !alertLon || isNaN(alertLat) || isNaN(alertLon)) {
+    console.error(`❌ Invalid alert location data: lat=${alertLat}, lon=${alertLon}`);
+    return;
+  }
 
   try {
     // Get all active dispatchers
@@ -295,27 +348,90 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
       return;
     }
 
-    // Log each dispatcher
+    // Calculate distance for each dispatcher
+    const dispatchersWithDistance = [];
+
     dispatchersSnapshot.docs.forEach((doc) => {
       const data = doc.data();
-      console.log(`👤 Dispatcher: ${data.email}, ID: ${doc.id}, Active: ${data.isActive}, Has token: ${!!data.fcmToken}`);
+      const dispatcherId = doc.id;
+
+      // Check if dispatcher has location data
+      if (data.lastKnownLocation) {
+        const dispatcherLat = data.lastKnownLocation.latitude;
+        const dispatcherLon = data.lastKnownLocation.longitude;
+
+        // Validate dispatcher location
+        if (isNaN(dispatcherLat) || isNaN(dispatcherLon)) {
+          console.log(`⚠️ Dispatcher ${data.email} has invalid location: lat=${dispatcherLat}, lon=${dispatcherLon} - skipping`);
+          return;
+        }
+
+        // Calculate distance from dispatcher to alert
+        const distance = calculateDistance(
+            dispatcherLat,
+            dispatcherLon,
+            alertLat,
+            alertLon,
+        );
+
+        // Validate calculated distance
+        if (isNaN(distance)) {
+          console.error(`❌ Distance calculation returned NaN for dispatcher ${data.email}`);
+          console.error(`   Dispatcher: lat=${dispatcherLat}, lon=${dispatcherLon}`);
+          console.error(`   Alert: lat=${alertLat}, lon=${alertLon}`);
+          return;
+        }
+
+        dispatchersWithDistance.push({
+          id: dispatcherId,
+          email: data.email,
+          distance: distance,
+          hasToken: !!(data.fcmToken || (data.fcmTokens && data.fcmTokens.length > 0)),
+        });
+
+        console.log(`👤 Dispatcher: ${data.email}, Distance: ${distance.toFixed(2)} km`);
+      } else {
+        console.log(`⚠️ Dispatcher ${data.email} has no location data - skipping`);
+      }
     });
 
-    // Send notification to each active dispatcher
-    const notificationPromises = dispatchersSnapshot.docs.map((doc) => {
+    if (dispatchersWithDistance.length === 0) {
+      console.log("❌ No dispatchers with location data found");
+      return;
+    }
+
+    // Sort by distance (nearest first)
+    dispatchersWithDistance.sort((a, b) => a.distance - b.distance);
+
+    // Take only the nearest N dispatchers
+    const nearestDispatchers = dispatchersWithDistance.slice(0, MAX_DISPATCHERS_TO_NOTIFY);
+
+    console.log(`📍 Notifying ${nearestDispatchers.length} nearest dispatcher(s):`);
+    nearestDispatchers.forEach((d, index) => {
+      console.log(`  ${index + 1}. ${d.email} - ${d.distance.toFixed(2)} km away`);
+    });
+
+    // Send notification to nearest dispatchers
+    const notificationPromises = nearestDispatchers.map((dispatcher) => {
+      const distanceText = dispatcher.distance < 1 ?
+        `${(dispatcher.distance * 1000).toFixed(0)} m` :
+        `${dispatcher.distance.toFixed(1)} km`;
+
       return sendNotificationToUser(
-          doc.id,
+          dispatcher.id,
           "🚨 New Emergency Alert",
-          `Emergency SOS from ${alertData.userEmail}`,
+          `Emergency SOS from ${alertData.userEmail} - ${distanceText} away`,
           {
             type: "new_sos",
             alertId: alertId,
+            distance: String(dispatcher.distance.toFixed(2)),
+            distanceText: distanceText,
           },
       );
     });
 
     await Promise.all(notificationPromises);
-    console.log(`✅ Notified ${dispatchersSnapshot.size} active dispatcher(s)`);
+    console.log(`✅ Notified ${nearestDispatchers.length} nearest dispatcher(s)`);
   } catch (error) {
     console.error("❌ Error in onSOSCreated:", error);
   }

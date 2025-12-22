@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/emergency_alert.dart';
+import 'medical_info_display.dart';
 import 'chat_screen.dart';
 
 /// Emergency alert bottom sheet for dispatchers
@@ -11,12 +12,14 @@ class EmergencyAlertSheet extends StatefulWidget {
   final EmergencyAlert alert;
   final Position? userLocation;
   final VoidCallback onNavigate;
+  final Future<void> Function(String alertId)? onAccepted;
 
   const EmergencyAlertSheet({
     super.key,
     required this.alert,
     required this.userLocation,
     required this.onNavigate,
+    this.onAccepted,
   });
 
   @override
@@ -47,6 +50,27 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
     super.dispose();
   }
 
+  /// Calculate distance between dispatcher and alert location
+  String _calculateDistance() {
+    if (widget.userLocation == null) {
+      return 'Location unavailable';
+    }
+
+    final distance = Geolocator.distanceBetween(
+      widget.userLocation!.latitude,
+      widget.userLocation!.longitude,
+      widget.alert.lat,
+      widget.alert.lon,
+    );
+
+    // Convert to kilometers or meters
+    if (distance < 1000) {
+      return '${distance.toStringAsFixed(0)} m away';
+    } else {
+      return '${(distance / 1000).toStringAsFixed(1)} km away';
+    }
+  }
+
   Future<void> _acceptAlert() async {
     print('===== ACCEPTING ALERT =====');
     setState(() => _accepting = true);
@@ -72,8 +96,11 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
 
       print('Alert marked as accepted in Firestore');
 
-      // Start updating dispatcher location in real-time
-      _startLocationUpdates();
+      // Start location sharing via dashboard (persists after sheet closes)
+      if (widget.onAccepted != null) {
+        print('🔄 Calling dashboard location sharing...');
+        await widget.onAccepted!(widget.alert.id);
+      }
 
       if (!mounted) return;
 
@@ -84,7 +111,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
         ),
       );
 
-      // Auto-navigate to the alert
+      // Auto-navigate to the alert (sheet can close, location tracking persists in dashboard)
       widget.onNavigate();
     } catch (e) {
       print('Error accepting alert: $e');
@@ -103,21 +130,24 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
   }
 
   Future<void> _startLocationUpdates() async {
-    print('===== STARTING DISPATCHER LOCATION UPDATES =====');
-    print('Alert ID: ${widget.alert.id}');
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    print('🚀 STARTING DISPATCHER LOCATION UPDATES');
+    print('   Alert ID: ${widget.alert.id}');
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     try {
       // First, get current position to trigger permission request and get initial location
-      print('Getting initial dispatcher location...');
+      print('⏳ Getting initial dispatcher location...');
       final currentPosition = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
       );
 
-      print('Initial dispatcher location: ${currentPosition.latitude}, ${currentPosition.longitude}');
+      print('✅ Initial dispatcher location: ${currentPosition.latitude}, ${currentPosition.longitude}');
 
       // Send initial location to Firestore
+      print('⏳ Sending initial location to emergency_alerts/${widget.alert.id}/dispatcherLocation...');
       await FirebaseFirestore.instance
           .collection('emergency_alerts')
           .doc(widget.alert.id)
@@ -126,16 +156,19 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
         'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('Initial dispatcher location sent to Firestore');
+      print('✅ Initial dispatcher location written to Firestore!');
+      print('   Path: emergency_alerts/${widget.alert.id}');
+      print('   Field: dispatcherLocation = GeoPoint(${currentPosition.latitude}, ${currentPosition.longitude})');
 
       // Then start streaming location updates
+      print('⏳ Starting location stream (updates every 5 meters)...');
       _locationUpdateSubscription = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
           distanceFilter: 5, // Update every 5 meters
         ),
       ).listen((Position position) {
-        print('Dispatcher location update: ${position.latitude}, ${position.longitude}');
+        print('📍 Dispatcher moved! New position: ${position.latitude}, ${position.longitude}');
 
         // Update dispatcher location in Firestore
         FirebaseFirestore.instance
@@ -145,15 +178,18 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
           'dispatcherLocation': GeoPoint(position.latitude, position.longitude),
           'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
         }).then((_) {
-          print('Dispatcher location updated in Firestore successfully');
+          print('✅ Location updated in Firestore: ${position.latitude}, ${position.longitude}');
         }).catchError((error) {
-          print('Error updating dispatcher location: $error');
+          print('❌ ERROR updating dispatcher location: $error');
         });
       }, onError: (error) {
-        print('Error in location stream: $error');
+        print('❌ ERROR in location stream: $error');
       });
+
+      print('✅ Location stream started successfully!');
     } catch (e) {
-      print('Error getting initial location: $e');
+      print('❌ ERROR getting initial location: $e');
+      print('   Stack trace: ${StackTrace.current}');
     }
   }
 
@@ -327,6 +363,15 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
                   ),
                   const SizedBox(height: 12),
 
+                  // Distance
+                  _InfoRow(
+                    icon: Icons.social_distance,
+                    label: 'Distance',
+                    value: _calculateDistance(),
+                    valueColor: Colors.blue,
+                  ),
+                  const SizedBox(height: 12),
+
                   // Services needed
                   const Row(
                     children: [
@@ -384,7 +429,14 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // Medical Information
+                  MedicalInfoDisplay(
+                    encryptedMedicalData: alertData?['medicalInfo'] as Map<String, dynamic>?,
+                  ),
+
+                  const SizedBox(height: 16),
 
                   // Navigate button
                   if (widget.userLocation != null)
@@ -518,11 +570,13 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final Color? valueColor;
 
   const _InfoRow({
     required this.icon,
     required this.label,
     required this.value,
+    this.valueColor,
   });
 
   @override
@@ -545,8 +599,9 @@ class _InfoRow extends StatelessWidget {
               ),
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
+                  color: valueColor,
                   fontWeight: FontWeight.w500,
                 ),
               ),

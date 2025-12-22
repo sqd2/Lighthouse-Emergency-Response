@@ -51,6 +51,9 @@ dependencies:
   # File handling
   path_provider: ^2.1.2
   permission_handler: ^11.3.0
+  # Encryption for medical data
+  encrypt: ^5.0.3
+  pointycastle: ^3.7.3
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

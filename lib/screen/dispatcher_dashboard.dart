@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../widgets/map_view.dart';
 import '../widgets/facility_details_widget.dart';
 import '../widgets/emergency_alert_widget.dart';
+import '../widgets/notification_permission_banner.dart';
 import '../models/facility_pin.dart';
 import '../models/emergency_alert.dart';
 import '../mixins/route_navigation_mixin.dart';
@@ -34,6 +36,10 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   // Controller to clear the temporary pin on Cancel/Add
   final _mapController = MapViewController();
 
+  // Track accepted alert ID for location sharing
+  String? _activeAlertId;
+  StreamSubscription<Position>? _alertLocationStream;
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +51,9 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
             destinationLon != null) {
           updateRouteProgress(context, position);
         }
+
+        // Update dispatcher's last known location in Firestore if active
+        _updateLastKnownLocation(position);
       },
     );
     _loadActiveStatus();
@@ -52,6 +61,26 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     Future.delayed(const Duration(seconds: 2), () {
       _initializeNotifications();
     });
+  }
+
+  /// Update dispatcher's last known location in Firestore (only if active)
+  Future<void> _updateLastKnownLocation(Position position) async {
+    if (!_isActive) return; // Only update when active
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'lastKnownLocation': GeoPoint(position.latitude, position.longitude),
+        'lastLocationUpdate': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error updating last known location: $e');
+    }
   }
 
   Future<void> _initializeNotifications() async {
@@ -84,14 +113,26 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
 
     final newStatus = !_isActive;
 
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .set({
+    // Prepare data to update
+    final updateData = {
       'isActive': newStatus,
       'role': 'dispatcher',
       'email': user.email,
-    }, SetOptions(merge: true));
+    };
+
+    // If going active, set initial location
+    if (newStatus && userLocation != null) {
+      updateData['lastKnownLocation'] = GeoPoint(
+        userLocation!.latitude,
+        userLocation!.longitude,
+      );
+      updateData['lastLocationUpdate'] = FieldValue.serverTimestamp();
+    }
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set(updateData, SetOptions(merge: true));
 
     setState(() {
       _isActive = newStatus;
@@ -114,7 +155,60 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   @override
   void dispose() {
     disposeLocationTracking();
+    _alertLocationStream?.cancel();
     super.dispose();
+  }
+
+  /// Start sharing dispatcher location for an accepted alert
+  Future<void> startSharingLocationForAlert(String alertId) async {
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    print('🚀 [DASHBOARD] Starting location sharing');
+    print('   Alert ID: $alertId');
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    // Cancel any existing stream
+    _alertLocationStream?.cancel();
+    _activeAlertId = alertId;
+
+    try {
+      //Get initial position
+      final initialPosition = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+
+      print('✅ Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}');
+
+      // Write to Firestore
+      await FirebaseFirestore.instance
+          .collection('emergency_alerts')
+          .doc(alertId)
+          .update({
+        'dispatcherLocation': GeoPoint(initialPosition.latitude, initialPosition.longitude),
+        'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Initial location written!');
+
+      // Start stream
+      _alertLocationStream = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
+      ).listen((position) {
+        if (_activeAlertId == alertId) {
+          print('📍 Update: ${position.latitude}, ${position.longitude}');
+          FirebaseFirestore.instance
+              .collection('emergency_alerts')
+              .doc(alertId)
+              .update({
+            'dispatcherLocation': GeoPoint(position.latitude, position.longitude),
+            'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
+          }).then((_) => print('✅ Written')).catchError((e) => print('❌ Error: $e'));
+        }
+      });
+
+      print('✅ Stream started!');
+    } catch (e) {
+      print('❌ Error: $e');
+    }
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -202,6 +296,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         alert: alert,
         userLocation: userLocation,
         onNavigate: () => _navigateToAlert(alert),
+        onAccepted: (alertId) => startSharingLocationForAlert(alertId),
       ),
     );
   }
@@ -363,16 +458,27 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
                   ? _alertsFromSnapshot(alertsSnapshot.data!)
                   : const <EmergencyAlert>[];
 
-              return MapView(
-                controller: _mapController,
-                enableTap: _addMode,
-                onMapTap: _handleMapTap,
-                facilities: allPins,
-                onFacilityTap: _handleFacilityTap,
-                emergencyAlerts: alerts,
-                onEmergencyAlertTap: _handleEmergencyAlertTap,
-                followUserLocation: false, // Dispatcher can freely pan the map
-                routePolyline: currentRoute,
+              return Stack(
+                children: [
+                  MapView(
+                    controller: _mapController,
+                    enableTap: _addMode,
+                    onMapTap: _handleMapTap,
+                    facilities: allPins,
+                    onFacilityTap: _handleFacilityTap,
+                    emergencyAlerts: alerts,
+                    onEmergencyAlertTap: _handleEmergencyAlertTap,
+                    followUserLocation: false, // Dispatcher can freely pan the map
+                    routePolyline: currentRoute,
+                  ),
+                  // Notification Permission Banner (ALWAYS ON TOP)
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: NotificationPermissionBanner(),
+                  ),
+                ],
               );
             },
           );

@@ -8,7 +8,7 @@
     "description": "Emergency response and facility navigation system",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
-    "gcm_sender_id": "103953800507",
+    "gcm_sender_id": "572669546401",
     "icons": [
         {
             "src": "icons/Icon-192.png",
