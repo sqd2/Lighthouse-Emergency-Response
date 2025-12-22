@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDispatcher() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'dispatcher';
+    }
+
+    function isCitizen() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'citizen';
+    }
+
+    // Users collection - basic profile data
+    match /users/{userId} {
+      // Users can read and write their own profile
+      allow read, write: if isOwner(userId);
+
+      // Dispatchers can read citizen profiles
+      allow read: if isDispatcher();
+
+      // Medical info subcollection - HIGHLY RESTRICTED
+      match /medical_info/{document=**} {
+        // Only the owner can read and write their medical info
+        allow read, write: if isOwner(userId);
+
+        // NOTE: Dispatchers access medical info through emergency_alerts,
+        // not directly from this collection
+      }
+
+      // Medical info access log - for audit trail
+      match /medical_info_access_log/{logId} {
+        // Only the owner can read access logs
+        allow read: if isOwner(userId);
+
+        // System can write logs (from service)
+        allow write: if isAuthenticated();
+      }
+    }
+
+    // Emergency alerts collection
+    match /emergency_alerts/{alertId} {
+      // Citizens can create their own alerts
+      allow create: if isCitizen() && request.auth.uid == request.resource.data.userId;
+
+      // Owners can read and update their own alerts
+      allow read, update: if isAuthenticated() &&
+                             resource.data.userId == request.auth.uid;
+
+      // Dispatchers can read all active alerts
+      allow read: if isDispatcher();
+
+      // Dispatchers can update alerts:
+      // 1. To accept them (when acceptedBy is null/doesn't exist)
+      // 2. To update alerts they've already accepted
+      allow update: if isDispatcher() && (
+        !('acceptedBy' in resource.data) ||
+        resource.data.acceptedBy == null ||
+        resource.data.acceptedBy == request.auth.uid
+      );
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Participants (citizen or assigned dispatcher) can read messages
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/emergency_alerts/$(alertId)).data.userId == request.auth.uid ||
+          get(/databases/$(database)/documents/emergency_alerts/$(alertId)).data.acceptedBy == request.auth.uid
+        );
+
+        // Participants can create messages
+        allow create: if isAuthenticated() && (
+          get(/databases/$(database)/documents/emergency_alerts/$(alertId)).data.userId == request.auth.uid ||
+          get(/databases/$(database)/documents/emergency_alerts/$(alertId)).data.acceptedBy == request.auth.uid
+        );
+      }
+    }
+
+    // Facilities collection
+    match /facilities/{facilityId} {
+      // Everyone can read facilities
+      allow read: if isAuthenticated();
+
+      // Only dispatchers can create/update/delete facilities
+      allow write: if isDispatcher();
+    }
+
+    // Deny all other access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

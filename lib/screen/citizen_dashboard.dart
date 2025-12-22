@@ -6,10 +6,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../widgets/map_view.dart';
 import '../widgets/sos_widgets.dart';
 import '../widgets/facility_details_widget.dart';
+import '../widgets/notification_permission_banner.dart';
+import '../widgets/medical_info_banner.dart';
 import '../models/facility_pin.dart';
 import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
 import '../services/notification_service.dart';
+import '../services/medical_info_service.dart';
 import '../places_service.dart';
 import '../directions_service.dart';
 import 'login_screen.dart';
@@ -26,7 +29,26 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     with RouteNavigationMixin, LocationTrackingMixin {
   // Dispatcher tracking
   Polyline? _dispatcherRoute;
-  FacilityPin? _dispatcherMarker;
+  GeoPoint? _lastDispatcherLocation; // Track last known dispatcher location
+
+  // Medical info tracking
+  bool _hasMedicalInfo = false;
+  bool _medicalInfoChecked = false;
+
+  /// Calculate distance between two GeoPoints in meters
+  String _calculateDistanceBetween(GeoPoint point1, GeoPoint point2) {
+    final distance = Geolocator.distanceBetween(
+      point1.latitude,
+      point1.longitude,
+      point2.latitude,
+      point2.longitude,
+    );
+    if (distance < 1000) {
+      return '${distance.toStringAsFixed(0)} m';
+    } else {
+      return '${(distance / 1000).toStringAsFixed(2)} km';
+    }
+  }
 
   @override
   void initState() {
@@ -46,6 +68,27 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     Future.delayed(const Duration(seconds: 2), () {
       _initializeNotifications();
     });
+    // Check if user has medical info
+    _checkMedicalInfo();
+  }
+
+  Future<void> _checkMedicalInfo() async {
+    try {
+      final hasMedicalInfo = await MedicalInfoService.hasMedicalInfo();
+      if (mounted) {
+        setState(() {
+          _hasMedicalInfo = hasMedicalInfo;
+          _medicalInfoChecked = true;
+        });
+      }
+    } catch (e) {
+      print('Error checking medical info: $e');
+      if (mounted) {
+        setState(() {
+          _medicalInfoChecked = true;
+        });
+      }
+    }
   }
 
   Future<void> _initializeNotifications() async {
@@ -263,6 +306,16 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                 .where('status', isEqualTo: 'active')
                 .snapshots(),
             builder: (context, alertSnapshot) {
+              // Log every time StreamBuilder rebuilds
+              if (alertSnapshot.hasData && alertSnapshot.data!.docs.isNotEmpty) {
+                final alertDoc = alertSnapshot.data!.docs.first;
+                final data = alertDoc.data() as Map<String, dynamic>;
+                if (data['dispatcherLocation'] != null) {
+                  final loc = data['dispatcherLocation'] as GeoPoint;
+                  print('[STREAM UPDATE] Dispatcher location from Firestore: ${loc.latitude}, ${loc.longitude}');
+                }
+              }
+
               final hasActiveAlert =
                   alertSnapshot.hasData && alertSnapshot.data!.docs.isNotEmpty;
               final activeAlert = hasActiveAlert
@@ -270,47 +323,40 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                   : null;
               final alertData = activeAlert?.data() as Map<String, dynamic>?;
 
+              // Extract dispatcher location for real-time tracking
+              LatLng? dispatcherLocation;
+              String? dispatcherName;
+
               // Update dispatcher location and route if accepted
               if (alertData != null &&
                   alertData['dispatcherLocation'] != null) {
-                print('===== DISPATCHER TRACKING ACTIVE =====');
-                print('Alert data has dispatcher location');
-
                 final dispatcherLoc =
                     alertData['dispatcherLocation'] as GeoPoint;
                 final alertLoc = alertData['location'] as GeoPoint;
 
-                print(
-                  'Dispatcher at: ${dispatcherLoc.latitude}, ${dispatcherLoc.longitude}',
+                // Set dispatcher location for MapView
+                dispatcherLocation = LatLng(
+                  dispatcherLoc.latitude,
+                  dispatcherLoc.longitude,
                 );
-                print(
-                  'Citizen at: ${alertLoc.latitude}, ${alertLoc.longitude}',
-                );
+                dispatcherName = alertData['acceptedByEmail'] ?? 'Dispatcher';
 
-                // Create dispatcher marker
-                final newDispatcherMarker = FacilityPin(
-                  id: 'dispatcher_${activeAlert!.id}',
-                  name:
-                      'Dispatcher (${alertData['acceptedByEmail'] ?? "Unknown"})',
-                  type: 'dispatcher',
-                  lat: dispatcherLoc.latitude,
-                  lon: dispatcherLoc.longitude,
-                );
+                // Only calculate route when dispatcher location actually changes
+                final locationChanged = _lastDispatcherLocation == null ||
+                    _lastDispatcherLocation!.latitude != dispatcherLoc.latitude ||
+                    _lastDispatcherLocation!.longitude != dispatcherLoc.longitude;
 
-                // Only update if location changed
-                if (_dispatcherMarker == null ||
-                    _dispatcherMarker!.lat != newDispatcherMarker.lat ||
-                    _dispatcherMarker!.lon != newDispatcherMarker.lon) {
-                  print(
-                    'Dispatcher location changed, creating marker and route',
-                  );
-                  _dispatcherMarker = newDispatcherMarker;
-                  // Calculate route asynchronously
+                if (locationChanged) {
+                  print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                  print('🔄 DISPATCHER MOVED!');
+                  print('   Previous: ${_lastDispatcherLocation?.latitude}, ${_lastDispatcherLocation?.longitude}');
+                  print('   Current:  ${dispatcherLoc.latitude}, ${dispatcherLoc.longitude}');
+                  print('   Distance: ${_lastDispatcherLocation != null ? _calculateDistanceBetween(_lastDispatcherLocation!, dispatcherLoc) : "N/A"}');
+                  print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                  _lastDispatcherLocation = dispatcherLoc;
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     _updateDispatcherRoute(dispatcherLoc, alertLoc);
                   });
-                } else {
-                  print('Dispatcher location unchanged');
                 }
               } else {
                 if (alertData != null) {
@@ -320,24 +366,21 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                     'dispatcherLocation: ${alertData['dispatcherLocation']}',
                   );
                 }
-                if (_dispatcherMarker != null || _dispatcherRoute != null) {
-                  print('Clearing dispatcher marker and route');
-                  _dispatcherMarker = null;
+                if (_dispatcherRoute != null || _lastDispatcherLocation != null) {
+                  print('Clearing dispatcher route and location tracking');
                   _dispatcherRoute = null;
+                  _lastDispatcherLocation = null;
                 }
               }
-
-              // Merge facilities with dispatcher marker
-              final facilitiesWithDispatcher = _dispatcherMarker != null
-                  ? [...allPins, _dispatcherMarker!]
-                  : allPins;
 
               return Stack(
                 children: [
                   MapView(
-                    facilities: facilitiesWithDispatcher,
+                    facilities: allPins,
                     onFacilityTap: _handleFacilityTap,
                     routePolyline: _dispatcherRoute ?? currentRoute,
+                    dispatcherLocation: dispatcherLocation,
+                    dispatcherName: dispatcherName,
                   ),
 
                   // Active SOS Alert Banner
@@ -349,6 +392,35 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                       child: ActiveSOSBanner(
                         alertId: activeAlert!.id,
                         alertData: alertData ?? {},
+                      ),
+                    ),
+
+                  // Notification Permission Banner (ALWAYS ON TOP)
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: NotificationPermissionBanner(),
+                  ),
+
+                  // Medical Info Banner (below notification banner)
+                  if (_medicalInfoChecked && !_hasMedicalInfo && !hasActiveAlert)
+                    Positioned(
+                      top: 60,
+                      left: 0,
+                      right: 0,
+                      child: MedicalInfoBanner(
+                        onComplete: () {
+                          // Refresh medical info status when user completes the form
+                          _checkMedicalInfo();
+                        },
+                        onDismiss: () {
+                          // User dismissed the banner, mark as having medical info
+                          // to prevent showing again this session
+                          setState(() {
+                            _hasMedicalInfo = true;
+                          });
+                        },
                       ),
                     ),
                 ],

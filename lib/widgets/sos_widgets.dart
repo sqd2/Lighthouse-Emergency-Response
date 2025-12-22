@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../places_service.dart';
+import '../services/medical_info_service.dart';
 import 'chat_screen.dart';
 
 /// SOS submission sheet for citizens
@@ -74,8 +75,22 @@ class _SOSSheetState extends State<SOSSheet> {
         throw Exception('User not authenticated');
       }
 
+      // Try to get encrypted medical info
+      Map<String, dynamic>? encryptedMedicalInfo;
+      try {
+        encryptedMedicalInfo = await MedicalInfoService.getEncryptedMedicalInfo();
+        if (encryptedMedicalInfo != null) {
+          print('✅ Including encrypted medical info in SOS alert');
+        } else {
+          print('⚠️ No medical info available for this user');
+        }
+      } catch (e) {
+        print('⚠️ Failed to get medical info for SOS: $e');
+        // Continue without medical info - it's optional
+      }
+
       // Create emergency alert in Firestore
-      await FirebaseFirestore.instance.collection('emergency_alerts').add({
+      final alertData = {
         'userId': user.uid,
         'userEmail': user.email ?? 'Unknown',
         'location': GeoPoint(
@@ -86,7 +101,14 @@ class _SOSSheetState extends State<SOSSheet> {
         'description': _descriptionController.text.trim(),
         'status': 'active',
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Add encrypted medical info if available
+      if (encryptedMedicalInfo != null) {
+        alertData['medicalInfo'] = encryptedMedicalInfo;
+      }
+
+      await FirebaseFirestore.instance.collection('emergency_alerts').add(alertData);
 
       if (!mounted) return;
 
