@@ -7,13 +7,14 @@ import '../widgets/map_view.dart';
 import '../widgets/facility_details_widget.dart';
 import '../widgets/emergency_alert_widget.dart';
 import '../widgets/notification_permission_banner.dart';
+import '../widgets/dispatcher_side_panel.dart';
 import '../models/facility_pin.dart';
 import '../models/emergency_alert.dart';
 import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
 import '../services/notification_service.dart';
 import 'add_facility_screen.dart';
-import 'edit_profile_screen.dart';
+import 'dispatcher_settings_screen.dart';
 
 class DispatcherDashboard extends StatefulWidget {
   const DispatcherDashboard({super.key});
@@ -33,12 +34,19 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   // Active status: when true, dispatcher receives SOS notifications
   bool _isActive = false;
 
+  // Debug mode: when true, shows pins, alerts, debug HUD, and logs
+  bool _debugMode = false;
+
   // Controller to clear the temporary pin on Cancel/Add
   final _mapController = MapViewController();
 
   // Track accepted alert ID for location sharing
   String? _activeAlertId;
   StreamSubscription<Position>? _alertLocationStream;
+  Position? _lastSharedPosition; // Track last position to implement manual distance filter
+
+  // Tab navigation (no PageView - full screen tabs)
+  int _currentPageIndex = 1; // Start on Map tab
 
   @override
   void initState() {
@@ -103,52 +111,100 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     if (doc.exists && mounted) {
       setState(() {
         _isActive = doc.data()?['isActive'] ?? false;
+        _debugMode = doc.data()?['debugMode'] ?? false;
       });
     }
   }
 
-  Future<void> _toggleActiveStatus() async {
+  Future<void> _toggleActiveStatus(bool newStatus) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final newStatus = !_isActive;
+    try {
+      // Prepare data to update
+      final updateData = {
+        'isActive': newStatus,
+        'role': 'dispatcher',
+        'email': user.email,
+      };
 
-    // Prepare data to update
-    final updateData = {
-      'isActive': newStatus,
-      'role': 'dispatcher',
-      'email': user.email,
-    };
+      // If going active, set initial location
+      if (newStatus && userLocation != null) {
+        updateData['lastKnownLocation'] = GeoPoint(
+          userLocation!.latitude,
+          userLocation!.longitude,
+        );
+        updateData['lastLocationUpdate'] = FieldValue.serverTimestamp();
+      }
 
-    // If going active, set initial location
-    if (newStatus && userLocation != null) {
-      updateData['lastKnownLocation'] = GeoPoint(
-        userLocation!.latitude,
-        userLocation!.longitude,
-      );
-      updateData['lastLocationUpdate'] = FieldValue.serverTimestamp();
-    }
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true));
 
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .set(updateData, SetOptions(merge: true));
+      if (mounted) {
+        setState(() {
+          _isActive = newStatus;
+        });
 
-    setState(() {
-      _isActive = newStatus;
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            newStatus
-                ? 'You are now ACTIVE - will receive SOS notifications'
-                : 'You are now INACTIVE - will not receive SOS notifications',
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newStatus
+                  ? 'You are now ACTIVE - will receive SOS notifications'
+                  : 'You are now INACTIVE - will not receive SOS notifications',
+            ),
+            backgroundColor: newStatus ? Colors.green : Colors.grey,
           ),
-          backgroundColor: newStatus ? Colors.green : Colors.grey,
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update status: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleDebugMode(bool newStatus) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({'debugMode': newStatus}, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          _debugMode = newStatus;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newStatus
+                  ? 'Debug mode enabled - showing all debug info'
+                  : 'Debug mode disabled - hiding debug info',
+            ),
+            backgroundColor: newStatus ? Colors.orange : Colors.grey,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update debug mode: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -159,12 +215,16 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     super.dispose();
   }
 
+  void _onBottomNavTap(int index) {
+    setState(() {
+      _currentPageIndex = index;
+    });
+  }
+
   /// Start sharing dispatcher location for an accepted alert
   Future<void> startSharingLocationForAlert(String alertId) async {
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    print('🚀 [DASHBOARD] Starting location sharing');
-    print('   Alert ID: $alertId');
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    print('[DASHBOARD] Starting location sharing');
+    print('  Alert ID: $alertId');
 
     // Cancel any existing stream
     _alertLocationStream?.cancel();
@@ -176,7 +236,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
 
-      print('✅ Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}');
+      print('[LOCATION] Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}');
 
       // Write to Firestore
       await FirebaseFirestore.instance
@@ -187,27 +247,100 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ Initial location written!');
+      print('[LOCATION] Initial location written');
+      _lastSharedPosition = initialPosition;
 
-      // Start stream
+      // Start stream (web doesn't honor distanceFilter, so we manually check)
       _alertLocationStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
-      ).listen((position) {
-        if (_activeAlertId == alertId) {
-          print('📍 Update: ${position.latitude}, ${position.longitude}');
-          FirebaseFirestore.instance
+      ).listen((position) async {
+        if (_activeAlertId != alertId) return;
+
+        // MANUAL DISTANCE FILTER - web platform doesn't honor distanceFilter
+        if (_lastSharedPosition != null) {
+          final distanceMoved = Geolocator.distanceBetween(
+            _lastSharedPosition!.latitude,
+            _lastSharedPosition!.longitude,
+            position.latitude,
+            position.longitude,
+          );
+
+          if (distanceMoved < 5.0) {
+            // Skip update - haven't moved enough
+            return;
+          }
+        }
+
+        print('[UPDATE] Position: ${position.latitude}, ${position.longitude}');
+        _lastSharedPosition = position;
+
+        try {
+          // Fetch alert to check for geofence arrival
+          final alertDoc = await FirebaseFirestore.instance
+              .collection('emergency_alerts')
+              .doc(alertId)
+              .get();
+
+          if (!alertDoc.exists) {
+            print('[WARN] Alert document no longer exists');
+            return;
+          }
+
+          final alertData = alertDoc.data();
+          final status = alertData?['status'] as String?;
+          final location = alertData?['location'] as GeoPoint?;
+
+          print('[DEBUG] Alert status: $status, Location exists: ${location != null}');
+
+          // Update dispatcher location
+          await FirebaseFirestore.instance
               .collection('emergency_alerts')
               .doc(alertId)
               .update({
             'dispatcherLocation': GeoPoint(position.latitude, position.longitude),
             'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
-          }).then((_) => print('✅ Written')).catchError((e) => print('❌ Error: $e'));
+          });
+
+          print('[LOCATION] Written to Firestore');
+
+          // Automatic geofence arrival detection (50 meters)
+          if (status == EmergencyAlert.STATUS_ACTIVE && location != null) {
+            final distance = Geolocator.distanceBetween(
+              position.latitude,
+              position.longitude,
+              location.latitude,
+              location.longitude,
+            );
+
+            print('[GEOFENCE] Distance to alert: ${distance.toStringAsFixed(1)}m (status: $status)');
+
+            if (distance <= 50) {
+              print('[AUTO-ARRIVAL] Within 50m geofence, marking as arrived...');
+              await FirebaseFirestore.instance
+                  .collection('emergency_alerts')
+                  .doc(alertId)
+                  .update({
+                'status': EmergencyAlert.STATUS_ARRIVED,
+                'arrivedAt': FieldValue.serverTimestamp(),
+              });
+              print('[AUTO-ARRIVAL] Successfully marked as arrived');
+            }
+          } else {
+            if (status != EmergencyAlert.STATUS_ACTIVE) {
+              print('[SKIP GEOFENCE] Status is not active: $status');
+            }
+            if (location == null) {
+              print('[SKIP GEOFENCE] Alert location is null');
+            }
+          }
+        } catch (e) {
+          print('[ERROR] Location update failed: $e');
         }
       });
 
-      print('✅ Stream started!');
+      print('[STREAM] Location stream started');
     } catch (e) {
-      print('❌ Error: $e');
+      print('[ERROR] Failed to start location sharing: $e');
     }
   }
 
@@ -411,31 +544,10 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
 
   @override
   Widget build(BuildContext context) {
-    final addLabel = _addMode ? "Tap on Map…" : "Add Facility";
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Dispatcher Dashboard"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const EditProfileScreen(),
-                ),
-              );
-            },
-            tooltip: 'Edit Profile',
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
-          ),
-        ],
-      ),
-
+      appBar: _currentPageIndex != 0 ? AppBar(
+        title: Text(_getPageTitle()),
+      ) : null,
       body: StreamBuilder<QuerySnapshot>(
         // Listen to facilities
         stream: FirebaseFirestore.instance.collection('facilities').snapshots(),
@@ -451,76 +563,108 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('emergency_alerts')
-                .where('status', isEqualTo: 'active')
+                .where('status', whereIn: [
+                  EmergencyAlert.STATUS_PENDING,
+                  EmergencyAlert.STATUS_ACTIVE,
+                  EmergencyAlert.STATUS_ARRIVED,
+                ])
                 .snapshots(),
             builder: (context, alertsSnapshot) {
               final alerts = (alertsSnapshot.hasData)
                   ? _alertsFromSnapshot(alertsSnapshot.data!)
                   : const <EmergencyAlert>[];
 
-              return Stack(
+              // Full-screen tab navigation (no PageView, no gesture conflicts)
+              return IndexedStack(
+                index: _currentPageIndex,
                 children: [
-                  MapView(
-                    controller: _mapController,
-                    enableTap: _addMode,
-                    onMapTap: _handleMapTap,
-                    facilities: allPins,
-                    onFacilityTap: _handleFacilityTap,
-                    emergencyAlerts: alerts,
-                    onEmergencyAlertTap: _handleEmergencyAlertTap,
-                    followUserLocation: false, // Dispatcher can freely pan the map
-                    routePolyline: currentRoute,
-                  ),
-                  // Notification Permission Banner (ALWAYS ON TOP)
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: NotificationPermissionBanner(),
-                  ),
+                  // Tab 0: Dashboard
+                  _buildDashboardPage(),
+
+                  // Tab 1: Map (Full Screen)
+                  _buildMapPage(allPins, alerts),
+
+                  // Tab 2: Settings
+                  _buildSettingsPage(),
                 ],
               );
             },
           );
         },
       ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentPageIndex,
+        onTap: _onBottomNavTap,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.map),
+            label: 'Map',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
+      ),
+    );
+  }
 
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Active/Inactive toggle
-          FloatingActionButton.extended(
-            heroTag: 'active_status',
-            backgroundColor: _isActive ? Colors.green : Colors.grey,
-            icon: Icon(
-              _isActive ? Icons.notifications_active : Icons.notifications_off,
-              color: Colors.white,
-            ),
-            label: Text(
-              _isActive ? 'Active' : 'Inactive',
-              style: const TextStyle(color: Colors.white),
-            ),
-            onPressed: _toggleActiveStatus,
-          ),
-          const SizedBox(height: 16),
-          // Recenter button
-          FloatingActionButton.small(
-            heroTag: 'recenter',
-            backgroundColor: Colors.blue,
-            tooltip: 'Recenter on my location',
-            onPressed: () {
-              _mapController.recenterOnUserLocation();
-            },
-            child: const Icon(Icons.my_location, color: Colors.white),
-          ),
-          const SizedBox(height: 16),
-          // Main Add Facility button
-          FloatingActionButton.extended(
+  String _getPageTitle() {
+    switch (_currentPageIndex) {
+      case 0:
+        return 'Dashboard';
+      case 1:
+        return 'Map';
+      case 2:
+        return 'Settings';
+      default:
+        return 'Dispatcher';
+    }
+  }
+
+  Widget _buildDashboardPage() {
+    return DispatcherSidePanel(
+      userLocation: userLocation,
+      onNavigateToAlert: _navigateToAlert,
+      onAcceptAlert: startSharingLocationForAlert,
+    );
+  }
+
+  Widget _buildMapPage(List<FacilityPin> allPins, List<EmergencyAlert> alerts) {
+    return Stack(
+      children: [
+        MapView(
+          controller: _mapController,
+          enableTap: _addMode,
+          onMapTap: _handleMapTap,
+          facilities: allPins,
+          onFacilityTap: _handleFacilityTap,
+          emergencyAlerts: alerts,
+          onEmergencyAlertTap: _handleEmergencyAlertTap,
+          followUserLocation: false,
+          routePolyline: currentRoute,
+          debugMode: _debugMode,
+        ),
+
+        // Notification Permission Banner
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: NotificationPermissionBanner(),
+        ),
+
+        // Fixed Corner Buttons (Google Maps style) - Bottom Left
+        // Add Facility Button
+        Positioned(
+          left: 16,
+          bottom: 96,
+          child: FloatingActionButton(
             heroTag: 'add_facility',
-            backgroundColor: Colors.red,
-            icon: Icon(_addMode ? Icons.touch_app : Icons.add_location_alt),
-            label: Text(addLabel),
             onPressed: () {
               if (_addMode) {
                 _mapController.clearTempPin();
@@ -529,9 +673,34 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
                 _armAddMode();
               }
             },
+            backgroundColor: _addMode ? Colors.orange : Colors.red,
+            child: Icon(_addMode ? Icons.close : Icons.add_location_alt),
           ),
-        ],
-      ),
+        ),
+
+        // Recenter Button
+        Positioned(
+          left: 16,
+          bottom: 24,
+          child: FloatingActionButton(
+            heroTag: 'recenter',
+            onPressed: () {
+              _mapController.recenterOnUserLocation();
+            },
+            backgroundColor: Colors.blue,
+            child: const Icon(Icons.my_location),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsPage() {
+    return DispatcherSettingsScreen(
+      isActive: _isActive,
+      debugMode: _debugMode,
+      onActiveToggle: _toggleActiveStatus,
+      onDebugModeToggle: _toggleDebugMode,
     );
   }
 }

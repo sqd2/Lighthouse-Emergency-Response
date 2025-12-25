@@ -1,5 +1,43 @@
+// Version - increment this to force cache update
+const VERSION = 'v2.6';
+
 importScripts("https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js");
 importScripts("https://www.gstatic.com/firebasejs/8.10.0/firebase-messaging.js");
+
+// Clear old caches on activation AND on install
+self.addEventListener('install', (event) => {
+  console.log('[SW] Installing new service worker version:', VERSION);
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          console.log('[SW] Deleting cache on install:', cacheName);
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(() => {
+      console.log('[SW] Force taking control...');
+      return self.skipWaiting();
+    })
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('[SW] Activating new service worker version:', VERSION);
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          console.log('[SW] Deleting old cache:', cacheName);
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(() => {
+      console.log('[SW] All caches cleared, claiming clients...');
+      return self.clients.claim();
+    })
+  );
+});
 
 // Initialize the Firebase app in the service worker with Firebase-generated API key
 firebase.initializeApp({
@@ -66,4 +104,4 @@ messaging.onBackgroundMessage(async (payload) => {
   return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-console.log('[SW] Service worker ready');
+console.log('[SW] Service worker ready - Version:', VERSION);

@@ -11,18 +11,52 @@ class DirectionsService {
   static const String _cloudFunctionUrl =
       'https://us-central1-lighthouse-2498c.cloudfunctions.net/getDirections';
 
-  /// Get route from origin to destination
+  // CACHING TO PREVENT EXCESSIVE API CALLS
+  static final Map<String, _CachedRoute> _routeCache = {};
+  static const Duration _cacheExpiration = Duration(minutes: 5);
+
+  // Round coordinates to ~100m precision (3 decimal places)
+  // This prevents API calls for tiny movements
+  static String _getCacheKey(double originLat, double originLng, double destLat, double destLng) {
+    final oLat = originLat.toStringAsFixed(3);
+    final oLng = originLng.toStringAsFixed(3);
+    final dLat = destLat.toStringAsFixed(3);
+    final dLng = destLng.toStringAsFixed(3);
+    return '$oLat,$oLng->$dLat,$dLng';
+  }
+
+  /// Get route from origin to destination (with caching)
   static Future<RouteInfo?> getRoute({
     required double originLat,
     required double originLng,
     required double destLat,
     required double destLng,
+    bool bypassCache = false,
   }) async {
+    // Check cache first (unless bypassed)
+    if (!bypassCache) {
+      final cacheKey = _getCacheKey(originLat, originLng, destLat, destLng);
+      final cached = _routeCache[cacheKey];
+
+      if (cached != null && !cached.isExpired) {
+        print('[CACHE HIT] Saved API call for route: $cacheKey');
+        print('  Cache age: ${DateTime.now().difference(cached.timestamp).inSeconds}s');
+        return cached.route;
+      }
+
+      if (cached != null && cached.isExpired) {
+        print('[CACHE] Expired entry removed: $cacheKey');
+        _routeCache.remove(cacheKey);
+      }
+    }
+
     // Use Cloud Function on web to avoid CORS, direct API on mobile
-    print('DirectionsService: Platform is ${kIsWeb ? 'web' : 'native'}');
+    print('[API CALL] Platform is ${kIsWeb ? 'web' : 'native'}');
+    RouteInfo? route;
+
     if (kIsWeb) {
       print('DirectionsService: Using Cloud Function for web');
-      return _getRouteViaCloudFunction(
+      route = await _getRouteViaCloudFunction(
         originLat: originLat,
         originLng: originLng,
         destLat: destLat,
@@ -30,13 +64,34 @@ class DirectionsService {
       );
     } else {
       print('DirectionsService: Using direct API for native');
-      return _getRouteDirect(
+      route = await _getRouteDirect(
         originLat: originLat,
         originLng: originLng,
         destLat: destLat,
         destLng: destLng,
       );
     }
+
+    // Cache the result
+    if (route != null) {
+      final cacheKey = _getCacheKey(originLat, originLng, destLat, destLng);
+      _routeCache[cacheKey] = _CachedRoute(route);
+      print('[CACHE] Stored route: $cacheKey (${_routeCache.length} total cached)');
+    }
+
+    return route;
+  }
+
+  /// Clear old cache entries (call periodically)
+  static void clearExpiredCache() {
+    _routeCache.removeWhere((key, value) => value.isExpired);
+    print('[CACHE] Cleared expired entries. ${_routeCache.length} remaining.');
+  }
+
+  /// Clear all cache (useful for testing)
+  static void clearAllCache() {
+    _routeCache.clear();
+    print('[CACHE] Cleared all entries.');
   }
 
   /// Direct API call for mobile platforms
@@ -195,4 +250,16 @@ class RouteInfo {
     required this.distanceMeters,
     required this.durationSeconds,
   });
+}
+
+/// Internal cache entry for routes
+class _CachedRoute {
+  final RouteInfo route;
+  final DateTime timestamp;
+
+  _CachedRoute(this.route) : timestamp = DateTime.now();
+
+  bool get isExpired {
+    return DateTime.now().difference(timestamp) > DirectionsService._cacheExpiration;
+  }
 }

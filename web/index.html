@@ -23,20 +23,12 @@
 
   <!-- Prevent iOS Safari zoom -->
   <style>
-    * {
-      touch-action: pan-x pan-y;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-    }
-    input, textarea {
-      -webkit-user-select: text;
-      touch-action: manipulation;
-    }
-    body {
-      overflow: hidden;
-      position: fixed;
+    html, body {
+      margin: 0;
+      padding: 0;
       width: 100%;
       height: 100%;
+      overflow: hidden;
     }
   </style>
 
@@ -64,6 +56,8 @@
 
   <!-- Firebase SDKs for JavaScript -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-messaging.js"></script>
   <script>
     // Initialize Firebase with Firebase-generated API key
@@ -81,9 +75,6 @@
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
-
-  <!-- Debug Console for iPhone Testing -->
-  <script src="debug-console.js"></script>
 
   <!-- Prevent iOS Safari zoom gestures -->
   <script>
@@ -132,5 +123,8 @@
       });
     }
   </script>
+
+  <!-- Debug Console for iPhone Testing - Load last after everything else -->
+  <script defer src="debug-console.js?v=2.5"></script>
 </body>
 </html>

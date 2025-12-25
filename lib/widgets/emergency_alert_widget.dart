@@ -29,6 +29,7 @@ class EmergencyAlertSheet extends StatefulWidget {
 class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
   bool _resolving = false;
   bool _accepting = false;
+  bool _markingArrived = false;
   StreamSubscription<Position>? _locationUpdateSubscription;
   Timer? _updateTimer;
 
@@ -48,6 +49,37 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
     _locationUpdateSubscription?.cancel();
     _updateTimer?.cancel();
     super.dispose();
+  }
+
+  /// Make phone call
+  void _makePhoneCall(String phoneNumber) async {
+    final Uri phoneUri = Uri(scheme: 'tel', path: phoneNumber);
+    // In Flutter Web, this will open the phone dialer on mobile browsers
+    // or show a browser prompt on desktop
+    try {
+      // Note: url_launcher package would be needed for actual implementation
+      // For now, we show the phone number and allow user to copy it
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Call Citizen'),
+            content: SelectableText(
+              phoneNumber,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error making phone call: $e');
+    }
   }
 
   /// Calculate distance between dispatcher and alert location
@@ -84,11 +116,45 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
       print('User: ${user.email} (${user.uid})');
       print('Alert ID: ${widget.alert.id}');
 
+      // PREVENT MULTIPLE ACTIVE ALERTS
+      // Check if dispatcher already has an active alert
+      print('[CHECK] Checking for existing active alerts...');
+      final activeAlertsSnapshot = await FirebaseFirestore.instance
+          .collection('emergency_alerts')
+          .where('acceptedBy', isEqualTo: user.uid)
+          .where('status', whereIn: [
+            EmergencyAlert.STATUS_ACTIVE,
+            EmergencyAlert.STATUS_ARRIVED,
+          ])
+          .limit(1)
+          .get();
+
+      if (activeAlertsSnapshot.docs.isNotEmpty) {
+        print('[BLOCKED] Dispatcher already has an active alert');
+        if (!mounted) return;
+
+        setState(() => _accepting = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'You already have an active alert. Please resolve it before accepting a new one.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
+      print('[OK] No active alerts found. Proceeding with acceptance...');
+
       // Update alert to mark as accepted
       await FirebaseFirestore.instance
           .collection('emergency_alerts')
           .doc(widget.alert.id)
           .update({
+        'status': EmergencyAlert.STATUS_ACTIVE,
         'acceptedBy': user.uid,
         'acceptedByEmail': user.email ?? 'Unknown',
         'acceptedAt': FieldValue.serverTimestamp(),
@@ -193,17 +259,118 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
     }
   }
 
+  Future<void> _markArrived() async {
+    print('[MARK ARRIVED] Button clicked!');
+    print('[MARK ARRIVED] Alert ID: ${widget.alert.id}');
+    print('[MARK ARRIVED] Current status: ${widget.alert.status}');
+
+    setState(() => _markingArrived = true);
+
+    try {
+      print('[MARK ARRIVED] Updating Firestore...');
+      await FirebaseFirestore.instance
+          .collection('emergency_alerts')
+          .doc(widget.alert.id)
+          .update({
+        'status': EmergencyAlert.STATUS_ARRIVED,
+        'arrivedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('[MARK ARRIVED] ✅ Firestore update successful!');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Marked as arrived at scene'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      print('[MARK ARRIVED] ❌ Error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to mark arrival: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _markingArrived = false);
+      }
+    }
+  }
+
   Future<void> _resolveAlert() async {
+    // Show confirmation dialog with optional notes
+    final TextEditingController notesController = TextEditingController();
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Mark as Resolved?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Are you sure you want to mark this alert as resolved?'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Resolution notes (optional)',
+                  hintText: 'e.g., Patient transported to hospital',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // If user cancelled, don't proceed
+    if (confirmed != true) {
+      notesController.dispose();
+      return;
+    }
+
+    final notes = notesController.text.trim();
+    notesController.dispose();
+
     setState(() => _resolving = true);
 
     try {
       // Stop location updates
       _locationUpdateSubscription?.cancel();
 
+      final updateData = {
+        'status': EmergencyAlert.STATUS_RESOLVED,
+        'resolvedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Add notes if provided
+      if (notes.isNotEmpty) {
+        updateData['resolutionNotes'] = notes;
+      }
+
       await FirebaseFirestore.instance
           .collection('emergency_alerts')
           .doc(widget.alert.id)
-          .update({'status': 'resolved'});
+          .update(updateData);
 
       if (!mounted) return;
 
@@ -347,11 +514,42 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
                   const Divider(),
                   const SizedBox(height: 16),
 
-                  // User info
-                  _InfoRow(
-                    icon: Icons.person,
-                    label: 'Reported by',
-                    value: widget.alert.userEmail,
+                  // User info - fetch from Firestore
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(widget.alert.userId)
+                        .snapshots(),
+                    builder: (context, userSnapshot) {
+                      String displayName = widget.alert.userEmail;
+                      String? phoneNumber;
+
+                      if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                        final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                        displayName = userData?['name'] ?? widget.alert.userEmail;
+                        phoneNumber = userData?['phone'];
+                      }
+
+                      return Column(
+                        children: [
+                          _InfoRow(
+                            icon: Icons.person,
+                            label: 'Citizen',
+                            value: displayName,
+                          ),
+                          if (phoneNumber != null && phoneNumber.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            _InfoRow(
+                              icon: Icons.phone,
+                              label: 'Phone',
+                              value: phoneNumber!,
+                              isClickable: true,
+                              onTap: () => _makePhoneCall(phoneNumber!),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
 
@@ -476,6 +674,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
                                     alertId: widget.alert.id,
                                     userRole: 'dispatcher',
                                     otherPartyEmail: widget.alert.userEmail,
+                                    otherPartyUserId: widget.alert.userId,
                                   ),
                                 ),
                               );
@@ -521,24 +720,16 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
                       ),
                     )
                   else
-                    // Show Close and Resolve buttons if accepted
-                    Row(
+                    // Show Close, Mark Arrived, and Resolve buttons if accepted
+                    Column(
                       children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Close'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        if (acceptedByMe)
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: _resolving ? null : _resolveAlert,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                              ),
-                              child: _resolving
+                        // If status is 'active' and accepted by me, show Mark Arrived button
+                        if (acceptedByMe && widget.alert.status == EmergencyAlert.STATUS_ACTIVE)
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _markingArrived ? null : _markArrived,
+                              icon: _markingArrived
                                   ? const SizedBox(
                                       height: 16,
                                       width: 16,
@@ -547,12 +738,54 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Text(
-                                      'Mark Resolved',
-                                      style: TextStyle(color: Colors.white),
-                                    ),
+                                  : const Icon(Icons.location_on, color: Colors.white),
+                              label: Text(
+                                _markingArrived ? 'Marking...' : 'Mark as Arrived',
+                                style: const TextStyle(color: Colors.white, fontSize: 16),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                              ),
                             ),
                           ),
+                        if (acceptedByMe && widget.alert.status == EmergencyAlert.STATUS_ACTIVE)
+                          const SizedBox(height: 12),
+                        // Row with Close and Resolve buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Close'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Only show Resolve button if arrived or if status allows
+                            if (acceptedByMe && (widget.alert.status == EmergencyAlert.STATUS_ARRIVED || widget.alert.status == EmergencyAlert.STATUS_ACTIVE))
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _resolving ? null : _resolveAlert,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                  ),
+                                  child: _resolving
+                                      ? const SizedBox(
+                                          height: 16,
+                                          width: 16,
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Text(
+                                          'Mark Resolved',
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                 ],
@@ -571,44 +804,64 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
+  final bool isClickable;
+  final VoidCallback? onTap;
 
   const _InfoRow({
     required this.icon,
     required this.label,
     required this.value,
     this.valueColor,
+    this.isClickable = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: Colors.grey),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                ),
+    return InkWell(
+      onTap: isClickable ? onTap : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: isClickable ? Colors.blue : Colors.grey),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          value,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isClickable ? Colors.blue : valueColor,
+                            fontWeight: FontWeight.w500,
+                            decoration: isClickable ? TextDecoration.underline : null,
+                          ),
+                        ),
+                      ),
+                      if (isClickable)
+                        const Icon(Icons.call, size: 16, color: Colors.blue),
+                    ],
+                  ),
+                ],
               ),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: valueColor,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

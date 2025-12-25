@@ -8,15 +8,16 @@ import '../widgets/sos_widgets.dart';
 import '../widgets/facility_details_widget.dart';
 import '../widgets/notification_permission_banner.dart';
 import '../widgets/medical_info_banner.dart';
+import '../widgets/citizen_side_panel.dart';
 import '../models/facility_pin.dart';
+import '../models/emergency_alert.dart';
 import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
 import '../services/notification_service.dart';
 import '../services/medical_info_service.dart';
 import '../places_service.dart';
 import '../directions_service.dart';
-import 'login_screen.dart';
-import 'edit_profile_screen.dart';
+import 'citizen_settings_screen.dart';
 
 class CitizenDashboard extends StatefulWidget {
   const CitizenDashboard({super.key});
@@ -30,10 +31,21 @@ class _CitizenDashboardState extends State<CitizenDashboard>
   // Dispatcher tracking
   Polyline? _dispatcherRoute;
   GeoPoint? _lastDispatcherLocation; // Track last known dispatcher location
+  DateTime? _lastRouteCalculation; // Track when we last calculated route
+
+  // Throttling settings to reduce API calls
+  static const Duration _routeUpdateThrottle = Duration(seconds: 30);
+  static const double _minimumDistanceForRecalculation = 100.0; // meters
 
   // Medical info tracking
   bool _hasMedicalInfo = false;
   bool _medicalInfoChecked = false;
+
+  // Debug mode: when true, shows pins, alerts, debug HUD, and logs
+  bool _debugMode = false;
+
+  // Tab navigation (no PageView - full screen tabs)
+  int _currentPageIndex = 1; // Start on Map tab
 
   /// Calculate distance between two GeoPoints in meters
   String _calculateDistanceBetween(GeoPoint point1, GeoPoint point2) {
@@ -103,6 +115,19 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    // Load debugMode if it exists
+    if (doc.exists && mounted) {
+      setState(() {
+        _debugMode = doc.data()?['debugMode'] ?? false;
+      });
+    }
+
+    // Set role
     await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
@@ -112,25 +137,82 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     }, SetOptions(merge: true));
   }
 
+  Future<void> _toggleDebugMode(bool newStatus) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({'debugMode': newStatus}, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          _debugMode = newStatus;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newStatus
+                  ? 'Debug mode enabled - showing all debug info'
+                  : 'Debug mode disabled - hiding debug info',
+            ),
+            backgroundColor: newStatus ? Colors.orange : Colors.grey,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update debug mode: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     disposeLocationTracking();
     super.dispose();
   }
 
-  Future<void> _logout(BuildContext context) async {
-    try {
-      await FirebaseAuth.instance.signOut();
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Logout failed: $e")));
-    }
+  void _onBottomNavTap(int index) {
+    setState(() {
+      _currentPageIndex = index;
+    });
+  }
+
+  Widget _buildNavBarItem(IconData icon, String label, int index) {
+    final isSelected = _currentPageIndex == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => _onBottomNavTap(index),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.red : Colors.grey,
+              size: 28,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.red : Colors.grey,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _handleFacilityTap(FacilityPin f) {
@@ -267,27 +349,9 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Citizen Dashboard'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const EditProfileScreen(),
-                ),
-              );
-            },
-            tooltip: 'Edit Profile',
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
-          ),
-        ],
-      ),
+      appBar: _currentPageIndex != 0 ? AppBar(
+        title: Text(_getPageTitle()),
+      ) : null,
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('facilities').snapshots(),
         builder: (context, facilitiesSnapshot) {
@@ -303,7 +367,11 @@ class _CitizenDashboardState extends State<CitizenDashboard>
             stream: FirebaseFirestore.instance
                 .collection('emergency_alerts')
                 .where('userId', isEqualTo: user?.uid ?? '')
-                .where('status', isEqualTo: 'active')
+                .where('status', whereIn: [
+                  EmergencyAlert.STATUS_PENDING,
+                  EmergencyAlert.STATUS_ACTIVE,
+                  EmergencyAlert.STATUS_ARRIVED,
+                ])
                 .snapshots(),
             builder: (context, alertSnapshot) {
               // Log every time StreamBuilder rebuilds
@@ -347,94 +415,226 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                     _lastDispatcherLocation!.longitude != dispatcherLoc.longitude;
 
                 if (locationChanged) {
-                  print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                  print('🔄 DISPATCHER MOVED!');
-                  print('   Previous: ${_lastDispatcherLocation?.latitude}, ${_lastDispatcherLocation?.longitude}');
-                  print('   Current:  ${dispatcherLoc.latitude}, ${dispatcherLoc.longitude}');
-                  print('   Distance: ${_lastDispatcherLocation != null ? _calculateDistanceBetween(_lastDispatcherLocation!, dispatcherLoc) : "N/A"}');
-                  print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                  _lastDispatcherLocation = dispatcherLoc;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _updateDispatcherRoute(dispatcherLoc, alertLoc);
-                  });
+                  // Calculate distance moved
+                  final distanceMoved = _lastDispatcherLocation != null
+                      ? Geolocator.distanceBetween(
+                          _lastDispatcherLocation!.latitude,
+                          _lastDispatcherLocation!.longitude,
+                          dispatcherLoc.latitude,
+                          dispatcherLoc.longitude,
+                        )
+                      : double.infinity; // First update, always recalculate
+
+                  // Check throttling - has enough time passed since last calculation?
+                  final now = DateTime.now();
+                  final timeSinceLastCalc = _lastRouteCalculation != null
+                      ? now.difference(_lastRouteCalculation!)
+                      : const Duration(days: 1); // First update, always recalculate
+
+                  final shouldRecalculate = distanceMoved >= _minimumDistanceForRecalculation &&
+                      timeSinceLastCalc >= _routeUpdateThrottle;
+
+                  if (shouldRecalculate) {
+                    print('====================================');
+                    print('[ROUTE UPDATE] Dispatcher moved significantly');
+                    print('  Previous: ${_lastDispatcherLocation?.latitude}, ${_lastDispatcherLocation?.longitude}');
+                    print('  Current:  ${dispatcherLoc.latitude}, ${dispatcherLoc.longitude}');
+                    print('  Distance moved: ${distanceMoved.toStringAsFixed(1)}m');
+                    print('  Time since last calc: ${timeSinceLastCalc.inSeconds}s');
+                    print('  Recalculating route...');
+                    print('====================================');
+
+                    _lastDispatcherLocation = dispatcherLoc;
+                    _lastRouteCalculation = now;
+
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _updateDispatcherRoute(dispatcherLoc, alertLoc);
+                    });
+                  } else {
+                    // Log why we skipped
+                    if (distanceMoved < _minimumDistanceForRecalculation) {
+                      print('[ROUTE SKIP] Distance too small: ${distanceMoved.toStringAsFixed(1)}m (min: $_minimumDistanceForRecalculation m)');
+                    }
+                    if (timeSinceLastCalc < _routeUpdateThrottle) {
+                      print('[ROUTE SKIP] Too soon since last calc: ${timeSinceLastCalc.inSeconds}s (min: ${_routeUpdateThrottle.inSeconds}s)');
+                    }
+
+                    // Still update marker position even if we don't recalculate route
+                    _lastDispatcherLocation = dispatcherLoc;
+                  }
                 }
               } else {
-                if (alertData != null) {
-                  print('Alert exists but no dispatcher location');
-                  print('acceptedBy: ${alertData['acceptedBy']}');
-                  print(
-                    'dispatcherLocation: ${alertData['dispatcherLocation']}',
-                  );
-                }
-                if (_dispatcherRoute != null || _lastDispatcherLocation != null) {
-                  print('Clearing dispatcher route and location tracking');
-                  _dispatcherRoute = null;
-                  _lastDispatcherLocation = null;
+                // Clear dispatcher tracking when no active alert or no dispatcher location
+                if (_dispatcherRoute != null || _lastDispatcherLocation != null || _lastRouteCalculation != null) {
+                  print('[CLEANUP] Clearing dispatcher route and location tracking');
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      setState(() {
+                        _dispatcherRoute = null;
+                        _lastDispatcherLocation = null;
+                        _lastRouteCalculation = null;
+                      });
+                    }
+                  });
                 }
               }
 
-              return Stack(
+              // Full-screen tab navigation (no PageView, no gesture conflicts)
+              return IndexedStack(
+                index: _currentPageIndex,
                 children: [
-                  MapView(
-                    facilities: allPins,
-                    onFacilityTap: _handleFacilityTap,
-                    routePolyline: _dispatcherRoute ?? currentRoute,
-                    dispatcherLocation: dispatcherLocation,
-                    dispatcherName: dispatcherName,
+                  // Tab 0: My Alerts
+                  _buildMyAlertsPage(),
+
+                  // Tab 1: Map (Full Screen)
+                  _buildMapPage(
+                    allPins,
+                    hasActiveAlert,
+                    activeAlert,
+                    alertData,
+                    dispatcherLocation,
+                    dispatcherName,
                   ),
 
-                  // Active SOS Alert Banner
-                  if (hasActiveAlert)
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      right: 16,
-                      child: ActiveSOSBanner(
-                        alertId: activeAlert!.id,
-                        alertData: alertData ?? {},
-                      ),
-                    ),
-
-                  // Notification Permission Banner (ALWAYS ON TOP)
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: NotificationPermissionBanner(),
+                  // Tab 2: Settings
+                  CitizenSettingsScreen(
+                    debugMode: _debugMode,
+                    onDebugModeToggle: _toggleDebugMode,
                   ),
-
-                  // Medical Info Banner (below notification banner)
-                  if (_medicalInfoChecked && !_hasMedicalInfo && !hasActiveAlert)
-                    Positioned(
-                      top: 60,
-                      left: 0,
-                      right: 0,
-                      child: MedicalInfoBanner(
-                        onComplete: () {
-                          // Refresh medical info status when user completes the form
-                          _checkMedicalInfo();
-                        },
-                        onDismiss: () {
-                          // User dismissed the banner, mark as having medical info
-                          // to prevent showing again this session
-                          setState(() {
-                            _hasMedicalInfo = true;
-                          });
-                        },
-                      ),
-                    ),
                 ],
               );
             },
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showSOSDialog,
-        backgroundColor: Colors.red,
-        child: const Icon(Icons.sos, size: 32, color: Colors.white),
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8.0,
+        elevation: 8,
+        child: SizedBox(
+          height: 65,
+          child: Row(
+            children: [
+              const SizedBox(width: 20), // Left padding
+              _buildNavBarItem(Icons.history, 'Alerts', 0),
+              _buildNavBarItem(Icons.map, 'Map', 1),
+              const SizedBox(width: 120), // Space for centered FAB with notch
+              _buildNavBarItem(Icons.settings, 'Settings', 2),
+              const SizedBox(width: 20), // Right padding
+            ],
+          ),
+        ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: SizedBox(
+        width: 80,
+        height: 80,
+        child: FloatingActionButton(
+          onPressed: _showSOSDialog,
+          backgroundColor: Colors.red,
+          elevation: 8,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.sos, size: 40, color: Colors.white),
+              SizedBox(height: 2),
+              Text(
+                'SOS',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          tooltip: 'Send Emergency SOS',
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+    );
+  }
+
+  String _getPageTitle() {
+    switch (_currentPageIndex) {
+      case 0:
+        return 'My Alerts';
+      case 1:
+        return 'Map';
+      case 2:
+        return 'Settings';
+      default:
+        return 'Citizen Dashboard';
+    }
+  }
+
+  Widget _buildMyAlertsPage() {
+    // Full-screen version of CitizenSidePanel (no width constraint)
+    return Container(
+      color: Colors.grey[100],
+      child: CitizenSidePanel(userLocation: userLocation),
+    );
+  }
+
+  Widget _buildMapPage(
+    List<FacilityPin> allPins,
+    bool hasActiveAlert,
+    DocumentSnapshot? activeAlert,
+    Map<String, dynamic>? alertData,
+    LatLng? dispatcherLocation,
+    String? dispatcherName,
+  ) {
+    return Stack(
+      children: [
+        MapView(
+          facilities: allPins,
+          onFacilityTap: _handleFacilityTap,
+          routePolyline: _dispatcherRoute ?? currentRoute,
+          dispatcherLocation: dispatcherLocation,
+          dispatcherName: dispatcherName,
+          debugMode: _debugMode,
+        ),
+
+        // Active SOS Alert Banner
+        if (hasActiveAlert)
+          Positioned(
+            top: 16,
+            left: 16,
+            right: 16,
+            child: ActiveSOSBanner(
+              alertId: activeAlert!.id,
+              alertData: alertData ?? {},
+            ),
+          ),
+
+        // Notification Permission Banner (ALWAYS ON TOP)
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: NotificationPermissionBanner(),
+        ),
+
+        // Medical Info Banner (below notification banner)
+        if (_medicalInfoChecked && !_hasMedicalInfo && !hasActiveAlert)
+          Positioned(
+            top: 60,
+            left: 0,
+            right: 0,
+            child: MedicalInfoBanner(
+              onComplete: () {
+                // Refresh medical info status when user completes the form
+                _checkMedicalInfo();
+              },
+              onDismiss: () {
+                // User dismissed the banner, mark as having medical info
+                // to prevent showing again this session
+                setState(() {
+                  _hasMedicalInfo = true;
+                });
+              },
+            ),
+          ),
+      ],
     );
   }
 }
