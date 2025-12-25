@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../places_service.dart';
 import '../services/medical_info_service.dart';
+import '../models/emergency_alert.dart';
 import 'chat_screen.dart';
 
 /// SOS submission sheet for citizens
@@ -99,7 +100,7 @@ class _SOSSheetState extends State<SOSSheet> {
         ),
         'services': _selectedServices.toList(),
         'description': _descriptionController.text.trim(),
-        'status': 'active',
+        'status': EmergencyAlert.STATUS_PENDING,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -330,19 +331,55 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
   }
 
   Future<void> _cancelAlert() async {
+    // Show confirmation dialog with reason selection
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cancel SOS Alert?'),
+          content: const Text('Please select a reason for cancellation:'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'False Alarm'),
+              child: const Text('False Alarm'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'Resolved on my own'),
+              child: const Text('Resolved on my own'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'Help arrived from another source'),
+              child: const Text('Other help arrived'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+          ],
+        );
+      },
+    );
+
+    // If user cancelled the dialog, don't proceed
+    if (reason == null) return;
+
     setState(() => _cancelling = true);
 
     try {
       await FirebaseFirestore.instance
           .collection('emergency_alerts')
           .doc(widget.alertId)
-          .update({'status': 'cancelled'});
+          .update({
+        'status': EmergencyAlert.STATUS_CANCELLED,
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'cancellationReason': reason,
+      });
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('SOS alert cancelled'),
+        SnackBar(
+          content: Text('SOS alert cancelled: $reason'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -450,11 +487,14 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
   @override
   Widget build(BuildContext context) {
     final isAccepted = widget.alertData['acceptedBy'] != null;
+    final status = widget.alertData['status'] as String? ?? 'pending';
+    final isArrived = status == 'arrived';
     final acceptedByEmail = widget.alertData['acceptedByEmail'] as String?;
     final dispatcherLocation =
         widget.alertData['dispatcherLocation'] as GeoPoint?;
     final alertLocation = widget.alertData['location'] as GeoPoint?;
     final createdAt = (widget.alertData['createdAt'] as Timestamp?)?.toDate();
+    final arrivedAt = (widget.alertData['arrivedAt'] as Timestamp?)?.toDate();
 
     // Calculate distance if dispatcher location is available
     String? distance;
@@ -472,15 +512,26 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
       }
     }
 
+    // Determine color scheme based on status
+    final Color primaryColor = isArrived
+        ? Colors.blue
+        : (isAccepted ? Colors.green : Colors.red);
+    final Color backgroundColor = isArrived
+        ? Colors.blue.shade50
+        : (isAccepted ? Colors.green.shade50 : Colors.red.shade50);
+    final IconData statusIcon = isArrived
+        ? Icons.location_on
+        : (isAccepted ? Icons.navigation : Icons.emergency);
+
     return Material(
       elevation: 8,
       borderRadius: BorderRadius.circular(12),
-      color: isAccepted ? Colors.green.shade50 : Colors.red.shade50,
+      color: backgroundColor,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           border: Border.all(
-            color: isAccepted ? Colors.green : Colors.red,
+            color: primaryColor,
             width: 2,
           ),
           borderRadius: BorderRadius.circular(12),
@@ -493,11 +544,11 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: isAccepted ? Colors.green : Colors.red,
+                    color: primaryColor,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    isAccepted ? Icons.check_circle : Icons.emergency,
+                    statusIcon,
                     color: Colors.white,
                     size: 20,
                   ),
@@ -508,16 +559,29 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isAccepted ? 'Dispatcher En Route' : 'Active SOS Alert',
+                        isArrived
+                            ? 'Dispatcher Has Arrived'
+                            : (isAccepted ? 'Dispatcher En Route' : 'Active SOS Alert'),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: isAccepted
-                              ? Colors.green.shade700
-                              : Colors.red,
+                          color: isArrived
+                              ? Colors.blue.shade700
+                              : (isAccepted
+                                  ? Colors.green.shade700
+                                  : Colors.red),
                         ),
                       ),
-                      if (createdAt != null)
+                      if (isArrived && arrivedAt != null)
+                        Text(
+                          'Arrived ${_formatTimestamp(arrivedAt)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        )
+                      else if (createdAt != null)
                         Text(
                           'Sent ${_formatTimestamp(createdAt)}',
                           style: TextStyle(
@@ -527,15 +591,17 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
                           ),
                         ),
                       Text(
-                        isAccepted
-                            ? acceptedByEmail ?? 'Unknown dispatcher'
-                            : 'Help is on the way',
+                        isArrived
+                            ? '${acceptedByEmail ?? 'Dispatcher'} is at your location'
+                            : (isAccepted
+                                ? acceptedByEmail ?? 'Unknown dispatcher'
+                                : 'Help is on the way'),
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black87,
                         ),
                       ),
-                      if (isAccepted && distance != null)
+                      if (isAccepted && distance != null && !isArrived)
                         Text(
                           distance,
                           style: TextStyle(
@@ -551,7 +617,9 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
                   IconButton(
                     icon: Icon(
                       Icons.chat_bubble_outline,
-                      color: Colors.green.shade700,
+                      color: isArrived
+                          ? Colors.blue.shade700
+                          : Colors.green.shade700,
                     ),
                     onPressed: () {
                       Navigator.push(
@@ -561,6 +629,7 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
                             alertId: widget.alertId,
                             userRole: 'citizen',
                             otherPartyEmail: acceptedByEmail ?? 'Dispatcher',
+                            otherPartyUserId: widget.alertData['acceptedBy'] as String?,
                           ),
                         ),
                       );

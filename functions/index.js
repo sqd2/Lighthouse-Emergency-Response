@@ -8,9 +8,6 @@ admin.initializeApp();
 
 const GOOGLE_API_KEY = "AIzaSyCvvz3UmQXQR9PzRUeYlNu2wJqpxG8FvuQ";
 
-// Maximum number of dispatchers to notify (nearest ones)
-const MAX_DISPATCHERS_TO_NOTIFY = 5;
-
 /**
  * Calculate distance between two coordinates using Haversine formula
  * Returns distance in kilometers
@@ -400,19 +397,17 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
       return;
     }
 
-    // Sort by distance (nearest first)
+    // Sort by distance (nearest first) - for logging purposes
     dispatchersWithDistance.sort((a, b) => a.distance - b.distance);
 
-    // Take only the nearest N dispatchers
-    const nearestDispatchers = dispatchersWithDistance.slice(0, MAX_DISPATCHERS_TO_NOTIFY);
-
-    console.log(`📍 Notifying ${nearestDispatchers.length} nearest dispatcher(s):`);
-    nearestDispatchers.forEach((d, index) => {
+    // Notify ALL dispatchers (no distance limitation)
+    console.log(`📍 Notifying ALL ${dispatchersWithDistance.length} active dispatcher(s):`);
+    dispatchersWithDistance.forEach((d, index) => {
       console.log(`  ${index + 1}. ${d.email} - ${d.distance.toFixed(2)} km away`);
     });
 
-    // Send notification to nearest dispatchers
-    const notificationPromises = nearestDispatchers.map((dispatcher) => {
+    // Send notification to ALL active dispatchers
+    const notificationPromises = dispatchersWithDistance.map((dispatcher) => {
       const distanceText = dispatcher.distance < 1 ?
         `${(dispatcher.distance * 1000).toFixed(0)} m` :
         `${dispatcher.distance.toFixed(1)} km`;
@@ -431,7 +426,7 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
     });
 
     await Promise.all(notificationPromises);
-    console.log(`✅ Notified ${nearestDispatchers.length} nearest dispatcher(s)`);
+    console.log(`✅ Notified ${dispatchersWithDistance.length} dispatcher(s) - ALL active dispatchers notified`);
   } catch (error) {
     console.error("❌ Error in onSOSCreated:", error);
   }
@@ -445,13 +440,13 @@ exports.onSOSAccepted = onDocumentUpdated("emergency_alerts/{alertId}", async (e
   const afterData = event.data.after.data();
   const alertId = event.params.alertId;
 
-  // Check if status changed from 'active' to 'accepted'
-  const wasActive = beforeData.status === "active";
-  const nowAccepted = afterData.status === "accepted";
+  // Check if dispatcher just accepted (status: pending → active)
+  const wasPending = beforeData.status === "pending";
+  const nowActive = afterData.status === "active";
   const hasDispatcher = afterData.acceptedBy && !beforeData.acceptedBy;
 
-  if (wasActive && nowAccepted && hasDispatcher) {
-    console.log(`SOS ${alertId} accepted by ${afterData.acceptedByEmail}`);
+  if (wasPending && nowActive && hasDispatcher) {
+    console.log(`✅ SOS ${alertId} accepted by ${afterData.acceptedByEmail}`);
 
     try {
       const citizenId = afterData.userId;
@@ -467,9 +462,122 @@ exports.onSOSAccepted = onDocumentUpdated("emergency_alerts/{alertId}", async (e
           },
       );
 
-      console.log(`Notified citizen ${citizenId} of SOS acceptance`);
+      console.log(`📲 Notified citizen ${citizenId} of SOS acceptance`);
     } catch (error) {
-      console.error("Error in onSOSAccepted:", error);
+      console.error("❌ Error in onSOSAccepted:", error);
+    }
+  }
+});
+
+/**
+ * Cloud Function: Notify citizen when dispatcher arrives at scene
+ */
+exports.onDispatcherArrived = onDocumentUpdated("emergency_alerts/{alertId}", async (event) => {
+  const beforeData = event.data.before.data();
+  const afterData = event.data.after.data();
+  const alertId = event.params.alertId;
+
+  // Check if status changed to 'arrived'
+  const statusChanged = beforeData.status === "active" && afterData.status === "arrived";
+
+  if (statusChanged) {
+    console.log(`🎯 Dispatcher arrived at alert ${alertId}`);
+
+    try {
+      const citizenId = afterData.userId;
+      const dispatcherEmail = afterData.acceptedByEmail || "Dispatcher";
+
+      await sendNotificationToUser(
+          citizenId,
+          "🚨 Dispatcher Arrived",
+          `${dispatcherEmail} has arrived at your location`,
+          {
+            type: "dispatcher_arrived",
+            alertId: alertId,
+            dispatcherEmail: dispatcherEmail,
+          },
+      );
+
+      console.log(`📲 Notified citizen ${citizenId} of dispatcher arrival`);
+    } catch (error) {
+      console.error("❌ Error in onDispatcherArrived:", error);
+    }
+  }
+});
+
+/**
+ * Cloud Function: Notify dispatcher when citizen cancels SOS
+ */
+exports.onSOSCancelled = onDocumentUpdated("emergency_alerts/{alertId}", async (event) => {
+  const beforeData = event.data.before.data();
+  const afterData = event.data.after.data();
+  const alertId = event.params.alertId;
+
+  // Check if status changed to 'cancelled'
+  const wasCancelled = afterData.status === "cancelled" && beforeData.status !== "cancelled";
+
+  if (wasCancelled) {
+    console.log(`❌ SOS ${alertId} cancelled by citizen`);
+
+    try {
+      const dispatcherId = afterData.acceptedBy;
+      const citizenEmail = afterData.userEmail || "Citizen";
+      const cancellationReason = afterData.cancellationReason || "No reason provided";
+
+      // Only notify if a dispatcher had accepted
+      if (dispatcherId) {
+        await sendNotificationToUser(
+            dispatcherId,
+            "⚠️ Alert Cancelled",
+            `${citizenEmail} cancelled their emergency alert. Reason: ${cancellationReason}`,
+            {
+              type: "sos_cancelled",
+              alertId: alertId,
+              citizenEmail: citizenEmail,
+              reason: cancellationReason,
+            },
+        );
+
+        console.log(`📲 Notified dispatcher ${dispatcherId} of cancellation`);
+      }
+    } catch (error) {
+      console.error("❌ Error in onSOSCancelled:", error);
+    }
+  }
+});
+
+/**
+ * Cloud Function: Notify citizen when dispatcher resolves SOS
+ */
+exports.onSOSResolved = onDocumentUpdated("emergency_alerts/{alertId}", async (event) => {
+  const beforeData = event.data.before.data();
+  const afterData = event.data.after.data();
+  const alertId = event.params.alertId;
+
+  // Check if status changed to 'resolved'
+  const wasResolved = afterData.status === "resolved" && beforeData.status !== "resolved";
+
+  if (wasResolved) {
+    console.log(`✅ SOS ${alertId} marked as resolved`);
+
+    try {
+      const citizenId = afterData.userId;
+      const dispatcherEmail = afterData.acceptedByEmail || "Dispatcher";
+
+      await sendNotificationToUser(
+          citizenId,
+          "✅ Emergency Resolved",
+          `${dispatcherEmail} has marked your emergency as resolved`,
+          {
+            type: "sos_resolved",
+            alertId: alertId,
+            dispatcherEmail: dispatcherEmail,
+          },
+      );
+
+      console.log(`📲 Notified citizen ${citizenId} of resolution`);
+    } catch (error) {
+      console.error("❌ Error in onSOSResolved:", error);
     }
   }
 });

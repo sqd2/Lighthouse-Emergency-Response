@@ -29,7 +29,10 @@ class LighthouseApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Lighthouse',
-      theme: ThemeData(primarySwatch: Colors.red),
+      theme: ThemeData(
+        primarySwatch: Colors.red,
+        useMaterial3: false,
+      ),
       home: const AuthGate(),
     );
   }

@@ -16,12 +16,14 @@ class ChatScreen extends StatefulWidget {
   final String alertId;
   final String userRole; // 'citizen' or 'dispatcher'
   final String otherPartyEmail; // Email of the person you're chatting with
+  final String? otherPartyUserId; // UserId for fetching name and phone
 
   const ChatScreen({
     super.key,
     required this.alertId,
     required this.userRole,
     required this.otherPartyEmail,
+    this.otherPartyUserId,
   });
 
   @override
@@ -354,16 +356,90 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Emergency Chat'),
-            Text(
-              widget.otherPartyEmail,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-            ),
-          ],
-        ),
+        title: widget.otherPartyUserId != null
+            ? StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(widget.otherPartyUserId)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  String displayName = widget.otherPartyEmail;
+                  String? phoneNumber;
+
+                  if (snapshot.hasData && snapshot.data!.exists) {
+                    final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                    displayName = userData?['name'] ?? widget.otherPartyEmail;
+                    phoneNumber = userData?['phone'];
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(displayName, style: const TextStyle(fontSize: 16)),
+                      if (phoneNumber != null && phoneNumber.isNotEmpty)
+                        Text(
+                          phoneNumber,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                        ),
+                    ],
+                  );
+                },
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Emergency Chat'),
+                  Text(
+                    widget.otherPartyEmail,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                  ),
+                ],
+              ),
+        actions: widget.otherPartyUserId != null
+            ? [
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(widget.otherPartyUserId)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    String? phoneNumber;
+
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                      phoneNumber = userData?['phone'];
+                    }
+
+                    if (phoneNumber == null || phoneNumber.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return IconButton(
+                      icon: const Icon(Icons.phone),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Call'),
+                            content: SelectableText(
+                              phoneNumber!,
+                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      tooltip: 'Call',
+                    );
+                  },
+                ),
+              ]
+            : null,
       ),
       body: Column(
         children: [

@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, Factory;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import '../models/facility_pin.dart';
@@ -40,6 +41,7 @@ class MapView extends StatefulWidget {
     this.routePolyline,
     this.dispatcherLocation,
     this.dispatcherName,
+    this.debugMode = false,
   });
 
   /// When true, a tap places a temporary pin and calls [onMapTap].
@@ -72,6 +74,9 @@ class MapView extends StatefulWidget {
 
   /// Dispatcher name/email for label
   final String? dispatcherName;
+
+  /// When true, shows facility pins, emergency alerts, and debug HUD
+  final bool debugMode;
 
   @override
   State<MapView> createState() => _MapViewState();
@@ -551,7 +556,7 @@ class _MapViewState extends State<MapView> {
       );
     }
 
-    // Facility markers
+    // Facility markers (always show)
     for (final facility in _facilities) {
       BitmapDescriptor icon;
       if (kIsWeb) {
@@ -578,7 +583,7 @@ class _MapViewState extends State<MapView> {
       );
     }
 
-    // Emergency alert markers (red circular dots)
+    // Emergency alert markers (red circular dots) (always show)
     if (_sosAlertIcon != null) {
       for (final alert in _emergencyAlerts) {
         markers[alert.id] = Marker(
@@ -684,24 +689,27 @@ class _MapViewState extends State<MapView> {
           zoomControlsEnabled: true,
           onTap: _onMapTapped,
           mapType: MapType.normal,
+          // No gesture recognizers - let map use native behavior
+          // gestureRecognizers removed to allow default single-finger panning
         ),
 
-        // Debug HUD
-        Positioned(
-          left: 8,
-          top: 8,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              'pins: ${_facilities.length} | alerts: ${_emergencyAlerts.length}',
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+        // Debug HUD (only show in debug mode)
+        if (widget.debugMode)
+          Positioned(
+            left: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'pins: ${_facilities.length} | alerts: ${_emergencyAlerts.length}',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
             ),
           ),
-        ),
       ],
     );
   }

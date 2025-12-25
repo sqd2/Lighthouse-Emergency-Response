@@ -3,6 +3,8 @@
   // Only enable on web
   if (typeof window === 'undefined') return;
 
+  console.log('🔧 DEBUG-CONSOLE.JS LOADED!');
+
   // Create console container with textarea for easy copying
   const consoleDiv = document.createElement('div');
   consoleDiv.id = 'debug-console';
@@ -75,12 +77,12 @@
     });
   };
 
-  // Create toggle button
+  // Create toggle button - STARTS HIDDEN, only shows when debug mode is enabled
   const toggleBtn = document.createElement('button');
   toggleBtn.textContent = '🐛';
   toggleBtn.style.cssText = `
     position: fixed;
-    bottom: 10px;
+    bottom: 80px;
     right: 10px;
     width: 50px;
     height: 50px;
@@ -88,8 +90,10 @@
     border: 2px solid #0f0;
     border-radius: 50%;
     font-size: 24px;
-    z-index: 1000000;
+    z-index: 9999999;
     cursor: pointer;
+    display: none;
+    pointer-events: auto;
   `;
 
   let isVisible = false;
@@ -104,11 +108,103 @@
     }
   };
 
-  // Add to page
-  document.body.appendChild(consoleDiv);
-  document.body.appendChild(toggleBtn);
-  document.body.appendChild(copyBtn);
-  copyBtn.style.display = 'none'; // Hidden by default
+  // Add to page - wait for Flutter to be ready
+  function addToPage() {
+    if (!document.body) {
+      setTimeout(addToPage, 100);
+      return;
+    }
+
+    // Wait for Flutter to finish loading (give it 3 seconds)
+    setTimeout(function() {
+      console.log('[DEBUG-CONSOLE] Adding elements to page...');
+      document.body.appendChild(consoleDiv);
+      document.body.appendChild(toggleBtn);
+      document.body.appendChild(copyBtn);
+      copyBtn.style.display = 'none'; // Hidden by default
+      console.log('[DEBUG-CONSOLE] Debug button added to page');
+
+      // Start checking debug mode after adding button
+      checkDebugMode();
+    }, 3000);
+  }
+
+  // Wait for page to fully load
+  window.addEventListener('load', function() {
+    console.log('[DEBUG-CONSOLE] Window loaded');
+    addToPage();
+  });
+
+  // Function to check debug mode from Firestore
+  let firebaseCheckAttempts = 0;
+  const MAX_FIREBASE_CHECK_ATTEMPTS = 50; // 50 attempts * 200ms = 10 seconds max
+
+  function checkDebugMode() {
+    firebaseCheckAttempts++;
+
+    // Give up after max attempts
+    if (firebaseCheckAttempts > MAX_FIREBASE_CHECK_ATTEMPTS) {
+      console.error('[DEBUG-CONSOLE] ❌ Firebase not available after 10 seconds');
+      console.error('[DEBUG-CONSOLE] Firebase object:', typeof firebase);
+      console.error('[DEBUG-CONSOLE] firebase.auth:', typeof firebase?.auth);
+      console.error('[DEBUG-CONSOLE] firebase.firestore:', typeof firebase?.firestore);
+      toggleBtn.style.display = 'none';
+      return;
+    }
+
+    // Wait for Firebase to be initialized - check if functions exist
+    if (typeof firebase === 'undefined' || typeof firebase.auth !== 'function' || typeof firebase.firestore !== 'function') {
+      setTimeout(checkDebugMode, 200);
+      return;
+    }
+
+    console.log('[DEBUG-CONSOLE] ✅ Firebase ready, setting up auth listener');
+
+    // Listen for auth state changes
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (user) {
+        console.log('[DEBUG-CONSOLE] ✅ User authenticated:', user.uid);
+        console.log('[DEBUG-CONSOLE] 👀 Watching debugMode field in Firestore...');
+
+        // User is signed in, check debug mode
+        firebase.firestore().collection('users').doc(user.uid)
+          .onSnapshot(function(doc) {
+            console.log('[DEBUG-CONSOLE] 📄 Firestore snapshot received');
+
+            if (doc.exists) {
+              const data = doc.data();
+              const debugMode = data.debugMode || false;
+
+              console.log('[DEBUG-CONSOLE] 📊 Full user data:', data);
+              console.log('[DEBUG-CONSOLE] 🐛 debugMode value:', debugMode);
+              console.log('[DEBUG-CONSOLE] 🔄 Setting button display to:', debugMode ? 'VISIBLE (block)' : 'HIDDEN (none)');
+
+              // Show or hide button based on debug mode
+              toggleBtn.style.display = debugMode ? 'block' : 'none';
+
+              console.log('[DEBUG-CONSOLE] ✅ Button display updated');
+
+              if (!debugMode && isVisible) {
+                // Hide console if debug mode is turned off while console is visible
+                isVisible = false;
+                consoleDiv.style.display = 'none';
+                copyBtn.style.display = 'none';
+                console.log('[DEBUG-CONSOLE] 🚫 Closed debug console (debug mode disabled)');
+              }
+            } else {
+              console.log('[DEBUG-CONSOLE] ⚠️ User document does not exist');
+              toggleBtn.style.display = 'none';
+            }
+          }, function(error) {
+            console.error('[DEBUG-CONSOLE] ❌ Error listening to user doc:', error);
+            toggleBtn.style.display = 'none';
+          });
+      } else {
+        console.log('[DEBUG-CONSOLE] ⚠️ No user signed in');
+        toggleBtn.style.display = 'none';
+      }
+    });
+  }
 
   // Log function
   function addLog(type, args) {

@@ -35,6 +35,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _loadUserProfile() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
@@ -43,10 +44,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         throw Exception('User not authenticated');
       }
 
+      // Add timeout for web - 10 seconds
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get();
+          .get()
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw Exception('Connection timeout - please check your internet connection');
+            },
+          );
+
+      if (!mounted) return;
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
@@ -65,14 +75,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+
+      String errorMessage = 'Failed to load profile';
+      if (e.toString().contains('timeout')) {
+        errorMessage = 'Connection timeout - please check your internet and try again';
+      } else if (e.toString().contains('permission-denied')) {
+        errorMessage = 'Permission denied - please log in again';
+      } else if (e.toString().contains('network')) {
+        errorMessage = 'Network error - please check your connection';
+      } else {
+        errorMessage = 'Failed to load profile: $e';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to load profile: $e'),
+          content: Text(errorMessage),
           backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: _loadUserProfile,
+          ),
         ),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -89,6 +118,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         throw Exception('User not authenticated');
       }
 
+      // Add timeout for web - 10 seconds
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -96,7 +126,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Connection timeout - please check your internet connection');
+        },
+      );
 
       if (!mounted) return;
 
@@ -111,9 +146,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
+
+      String errorMessage = 'Failed to update profile';
+      if (e.toString().contains('timeout')) {
+        errorMessage = 'Connection timeout - please check your internet and try again';
+      } else if (e.toString().contains('permission-denied')) {
+        errorMessage = 'Permission denied - please log in again';
+      } else if (e.toString().contains('network')) {
+        errorMessage = 'Network error - please check your connection';
+      } else {
+        errorMessage = 'Failed to update profile: $e';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to update profile: $e'),
+          content: Text(errorMessage),
           backgroundColor: Colors.red,
         ),
       );

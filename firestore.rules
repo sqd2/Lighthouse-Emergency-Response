@@ -23,6 +23,20 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'citizen';
     }
 
+    // Validate status transitions for emergency alerts
+    function isValidStatusTransition(oldStatus, newStatus) {
+      // Valid transitions:
+      // pending → active (dispatcher accepts)
+      // active → arrived (dispatcher arrives)
+      // arrived → resolved (dispatcher resolves)
+      // Any non-resolved status → cancelled (citizen cancels)
+      return (oldStatus == 'pending' && newStatus == 'active') ||
+             (oldStatus == 'active' && newStatus == 'arrived') ||
+             (oldStatus == 'arrived' && newStatus == 'resolved') ||
+             (oldStatus == 'active' && newStatus == 'resolved') ||
+             (newStatus == 'cancelled' && oldStatus != 'resolved' && oldStatus != 'cancelled');
+    }
+
     // Users collection - basic profile data
     match /users/{userId} {
       // Users can read and write their own profile
@@ -52,23 +66,38 @@ service cloud.firestore {
 
     // Emergency alerts collection
     match /emergency_alerts/{alertId} {
-      // Citizens can create their own alerts
-      allow create: if isCitizen() && request.auth.uid == request.resource.data.userId;
+      // Citizens can create their own alerts (must start with 'pending' status)
+      allow create: if isCitizen() &&
+                       request.auth.uid == request.resource.data.userId &&
+                       request.resource.data.status == 'pending';
 
-      // Owners can read and update their own alerts
-      allow read, update: if isAuthenticated() &&
-                             resource.data.userId == request.auth.uid;
+      // Owners can read their own alerts
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
 
-      // Dispatchers can read all active alerts
+      // Owners can update their own alerts (only to cancel)
+      allow update: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.status == 'cancelled' &&
+                       isValidStatusTransition(resource.data.status, request.resource.data.status);
+
+      // Dispatchers can read all alerts
       allow read: if isDispatcher();
 
       // Dispatchers can update alerts:
-      // 1. To accept them (when acceptedBy is null/doesn't exist)
-      // 2. To update alerts they've already accepted
+      // 1. To accept them (pending → active, when acceptedBy is null/doesn't exist)
+      // 2. To mark arrived (active → arrived, only their own accepted alerts)
+      // 3. To resolve (arrived/active → resolved, only their own accepted alerts)
+      // 4. To update location (only their own accepted alerts, status unchanged)
       allow update: if isDispatcher() && (
-        !('acceptedBy' in resource.data) ||
-        resource.data.acceptedBy == null ||
-        resource.data.acceptedBy == request.auth.uid
+        // Accepting an alert (pending → active)
+        ((!('acceptedBy' in resource.data) || resource.data.acceptedBy == null) &&
+         request.resource.data.status == 'active' &&
+         isValidStatusTransition(resource.data.status, request.resource.data.status))
+        ||
+        // Updating own accepted alert (arrived, resolved, location updates)
+        (resource.data.acceptedBy == request.auth.uid &&
+         (resource.data.status == request.resource.data.status ||
+          isValidStatusTransition(resource.data.status, request.resource.data.status)))
       );
 
       // Messages subcollection
