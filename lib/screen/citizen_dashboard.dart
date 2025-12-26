@@ -3,14 +3,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:async';
 import '../widgets/map_view.dart';
 import '../widgets/sos_widgets.dart';
 import '../widgets/facility_details_widget.dart';
 import '../widgets/notification_permission_banner.dart';
 import '../widgets/medical_info_banner.dart';
 import '../widgets/citizen_side_panel.dart';
+import '../widgets/incoming_call_dialog.dart';
 import '../models/facility_pin.dart';
 import '../models/emergency_alert.dart';
+import '../models/call.dart';
 import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
 import '../services/notification_service.dart';
@@ -43,6 +46,9 @@ class _CitizenDashboardState extends State<CitizenDashboard>
 
   // Debug mode: when true, shows pins, alerts, debug HUD, and logs
   bool _debugMode = false;
+
+  // Call listener
+  StreamSubscription<QuerySnapshot>? _callListener;
 
   // Tab navigation (no PageView - full screen tabs)
   int _currentPageIndex = 1; // Start on Map tab
@@ -82,6 +88,7 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     });
     // Check if user has medical info
     _checkMedicalInfo();
+    _setupCallListener();
   }
 
   Future<void> _checkMedicalInfo() async {
@@ -109,6 +116,38 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     } catch (e) {
       print('Failed to initialize notifications in citizen dashboard: $e');
     }
+  }
+
+  /// Set up listener for incoming calls
+  void _setupCallListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Use collectionGroup to listen to all calls across all alerts
+    _callListener = FirebaseFirestore.instance
+        .collectionGroup('calls')
+        .where('receiverId', isEqualTo: user.uid)
+        .where('status', isEqualTo: Call.STATUS_RINGING)
+        .snapshots()
+        .listen((snapshot) {
+      for (var change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added) {
+          final call = Call.fromFirestore(change.doc);
+
+          // Extract alertId from the document path
+          // Path format: emergency_alerts/{alertId}/calls/{callId}
+          final pathSegments = change.doc.reference.path.split('/');
+          if (pathSegments.length >= 2) {
+            final alertId = pathSegments[pathSegments.length - 3];
+
+            // Show incoming call dialog
+            if (mounted) {
+              showIncomingCallDialog(context, alertId, call);
+            }
+          }
+        }
+      }
+    });
   }
 
   Future<void> _setUserRole() async {
@@ -178,6 +217,7 @@ class _CitizenDashboardState extends State<CitizenDashboard>
   @override
   void dispose() {
     disposeLocationTracking();
+    _callListener?.cancel();
     super.dispose();
   }
 
@@ -592,17 +632,32 @@ class _CitizenDashboardState extends State<CitizenDashboard>
           dispatcherLocation: dispatcherLocation,
           dispatcherName: dispatcherName,
           debugMode: _debugMode,
+          // Disable marker taps when overlays are present to prevent click-through
+          disableMarkerTaps: hasActiveAlert || (_medicalInfoChecked && !_hasMedicalInfo && !hasActiveAlert),
         ),
 
-        // Active SOS Alert Banner
+        // Active SOS Alert Banner - with solid background to prevent click-through
         if (hasActiveAlert)
           Positioned(
             top: 16,
             left: 16,
             right: 16,
-            child: ActiveSOSBanner(
-              alertId: activeAlert!.id,
-              alertData: alertData ?? {},
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white, // SOLID background is KEY to preventing click-through
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ActiveSOSBanner(
+                alertId: activeAlert!.id,
+                alertData: alertData ?? {},
+              ),
             ),
           ),
 

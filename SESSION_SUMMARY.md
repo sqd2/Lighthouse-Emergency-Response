@@ -664,7 +664,7 @@ import 'dart:async'; // Added for StreamSubscription<Position>
 
 ### Low Priority
 7. **Enhanced Notifications**
-   - Sound alerts for high-priority emergencies
+   - Sound alerts for high-  emergencies
    - Notification categories (fire, medical, police)
    - Persistent notification for active alerts
    - Vibration patterns

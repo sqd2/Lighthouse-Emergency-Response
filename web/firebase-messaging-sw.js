@@ -1,5 +1,5 @@
 // Version - increment this to force cache update
-const VERSION = 'v2.6';
+const VERSION = 'v2.7';
 
 importScripts("https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js");
 importScripts("https://www.gstatic.com/firebasejs/8.10.0/firebase-messaging.js");

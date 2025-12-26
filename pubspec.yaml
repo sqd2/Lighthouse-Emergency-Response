@@ -40,6 +40,7 @@ dependencies:
   firebase_storage: ^13.0.3
   firebase_messaging: ^16.0.3
   firebase_messaging_web: ^4.0.3
+  cloud_functions: 6.0.3
   http: ^1.2.0
   # Image and media
   image_picker: ^1.0.7
@@ -59,6 +60,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   google_polyline_algorithm: ^3.1.0
   timeago: ^3.7.0
+  # WebRTC video/voice calls
+  livekit_client: ^2.0.0
+  wakelock_plus: ^1.1.4
 
 
 dev_dependencies:

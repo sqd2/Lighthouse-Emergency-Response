@@ -114,6 +114,26 @@ service cloud.firestore {
           get(/databases/$(database)/documents/emergency_alerts/$(alertId)).data.acceptedBy == request.auth.uid
         );
       }
+
+      // Calls subcollection
+      match /calls/{callId} {
+        // Allow reading calls where user is caller or receiver (for collectionGroup queries)
+        allow read: if isAuthenticated() && (
+          ('callerId' in resource.data && resource.data.callerId == request.auth.uid) ||
+          ('receiverId' in resource.data && resource.data.receiverId == request.auth.uid)
+        );
+
+        // Participants can create calls (caller must be the creator)
+        allow create: if isAuthenticated() &&
+          'callerId' in request.resource.data &&
+          request.resource.data.callerId == request.auth.uid;
+
+        // Participants can update calls (to accept, reject, or end)
+        allow update: if isAuthenticated() && (
+          ('callerId' in resource.data && resource.data.callerId == request.auth.uid) ||
+          ('receiverId' in resource.data && resource.data.receiverId == request.auth.uid)
+        );
+      }
     }
 
     // Facilities collection
@@ -123,6 +143,16 @@ service cloud.firestore {
 
       // Only dispatchers can create/update/delete facilities
       allow write: if isDispatcher();
+    }
+
+    // Root-level match for collectionGroup queries on calls
+    // This allows querying calls across all emergency alerts
+    match /{path=**}/calls/{callId} {
+      // Allow reading calls where user is caller or receiver
+      allow read: if isAuthenticated() && (
+        ('callerId' in resource.data && resource.data.callerId == request.auth.uid) ||
+        ('receiverId' in resource.data && resource.data.receiverId == request.auth.uid)
+      );
     }
 
     // Deny all other access by default

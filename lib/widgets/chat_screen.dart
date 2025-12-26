@@ -10,6 +10,9 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
+import '../models/call.dart';
+import 'call_button.dart';
+import 'incoming_call_dialog.dart';
 
 /// Chat screen for communication between dispatcher and citizen
 class ChatScreen extends StatefulWidget {
@@ -43,6 +46,49 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _recordingTimer;
   int _recordingDuration = 0;
 
+  // Call listener
+  StreamSubscription<QuerySnapshot>? _callListener;
+
+  /// Set up listener for incoming calls
+  void _setupCallListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Use collectionGroup to listen to all calls across all alerts
+    _callListener = FirebaseFirestore.instance
+        .collectionGroup('calls')
+        .where('receiverId', isEqualTo: user.uid)
+        .where('status', isEqualTo: Call.STATUS_RINGING)
+        .snapshots()
+        .listen((snapshot) {
+          for (var change in snapshot.docChanges) {
+            if (change.type == DocumentChangeType.added) {
+              final call = Call.fromFirestore(change.doc);
+
+              // Extract alertId from the document path
+              // Path format: emergency_alerts/{alertId}/calls/{callId}
+              final pathSegments = change.doc.reference.path.split('/');
+              if (pathSegments.length >= 2) {
+                final alertId = pathSegments[pathSegments.length - 3];
+
+                // Show incoming call dialog
+                if (mounted) {
+                  _showIncomingCallDialog(context, alertId, call);
+                }
+              }
+            }
+          }
+        });
+  }
+
+  void _showIncomingCallDialog(
+    BuildContext context,
+    String alertId,
+    Call call,
+  ) {
+    showIncomingCallDialog(context, alertId, call);
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -50,6 +96,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _recordingTimer?.cancel();
+    _callListener?.cancel();
     super.dispose();
   }
 
@@ -68,14 +115,14 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(widget.alertId)
           .collection('messages')
           .add({
-        'senderId': user.uid,
-        'senderEmail': user.email ?? 'Unknown',
-        'senderRole': widget.userRole,
-        'messageType': 'text',
-        'message': message,
-        'timestamp': FieldValue.serverTimestamp(),
-        'isRead': false,
-      });
+            'senderId': user.uid,
+            'senderEmail': user.email ?? 'Unknown',
+            'senderRole': widget.userRole,
+            'messageType': 'text',
+            'message': message,
+            'timestamp': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
 
       _messageController.clear();
       _scrollToBottom();
@@ -128,15 +175,15 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(widget.alertId)
           .collection('messages')
           .add({
-        'senderId': user.uid,
-        'senderEmail': user.email ?? 'Unknown',
-        'senderRole': widget.userRole,
-        'messageType': 'image',
-        'message': '',
-        'mediaUrl': imageUrl,
-        'timestamp': FieldValue.serverTimestamp(),
-        'isRead': false,
-      });
+            'senderId': user.uid,
+            'senderEmail': user.email ?? 'Unknown',
+            'senderRole': widget.userRole,
+            'messageType': 'image',
+            'message': '',
+            'mediaUrl': imageUrl,
+            'timestamp': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
 
       _scrollToBottom();
     } catch (e) {
@@ -215,7 +262,9 @@ class _ChatScreenState extends State<ChatScreen> {
           .ref()
           .child('chat_voice')
           .child(widget.alertId)
-          .child('${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? "wav" : "m4a"}');
+          .child(
+            '${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? "wav" : "m4a"}',
+          );
 
       // Get audio bytes and upload (web only for now)
       if (!kIsWeb) {
@@ -245,16 +294,16 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(widget.alertId)
           .collection('messages')
           .add({
-        'senderId': user.uid,
-        'senderEmail': user.email ?? 'Unknown',
-        'senderRole': widget.userRole,
-        'messageType': 'voice',
-        'message': '',
-        'mediaUrl': voiceUrl,
-        'voiceDuration': _recordingDuration,
-        'timestamp': FieldValue.serverTimestamp(),
-        'isRead': false,
-      });
+            'senderId': user.uid,
+            'senderEmail': user.email ?? 'Unknown',
+            'senderRole': widget.userRole,
+            'messageType': 'voice',
+            'message': '',
+            'mediaUrl': voiceUrl,
+            'voiceDuration': _recordingDuration,
+            'timestamp': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
 
       _scrollToBottom();
     } catch (e) {
@@ -282,10 +331,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
@@ -329,6 +375,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _setupCallListener();
     _markMessagesAsRead();
   }
 
@@ -367,7 +414,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   String? phoneNumber;
 
                   if (snapshot.hasData && snapshot.data!.exists) {
-                    final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                    final userData =
+                        snapshot.data!.data() as Map<String, dynamic>?;
                     displayName = userData?['name'] ?? widget.otherPartyEmail;
                     phoneNumber = userData?['phone'];
                   }
@@ -379,7 +427,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       if (phoneNumber != null && phoneNumber.isNotEmpty)
                         Text(
                           phoneNumber,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.normal,
+                          ),
                         ),
                     ],
                   );
@@ -391,7 +442,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   const Text('Emergency Chat'),
                   Text(
                     widget.otherPartyEmail,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.normal,
+                    ),
                   ),
                 ],
               ),
@@ -404,37 +458,39 @@ class _ChatScreenState extends State<ChatScreen> {
                       .snapshots(),
                   builder: (context, snapshot) {
                     String? phoneNumber;
+                    String userName = widget.otherPartyEmail;
 
                     if (snapshot.hasData && snapshot.data!.exists) {
-                      final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                      final userData =
+                          snapshot.data!.data() as Map<String, dynamic>?;
                       phoneNumber = userData?['phone'];
+                      userName = userData?['name'] ?? widget.otherPartyEmail;
                     }
 
-                    if (phoneNumber == null || phoneNumber.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-
-                    return IconButton(
-                      icon: const Icon(Icons.phone),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Call'),
-                            content: SelectableText(
-                              phoneNumber!,
-                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('Close'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      tooltip: 'Call',
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Video call button
+                        CallButton(
+                          alertId: widget.alertId,
+                          receiverId: widget.otherPartyUserId!,
+                          receiverName: userName,
+                          callType: Call.TYPE_VIDEO,
+                          icon: Icons.videocam,
+                          tooltip: 'Video call',
+                          color: Colors.white,
+                        ),
+                        // Audio call button
+                        CallButton(
+                          alertId: widget.alertId,
+                          receiverId: widget.otherPartyUserId!,
+                          receiverName: userName,
+                          callType: Call.TYPE_AUDIO,
+                          icon: Icons.phone_in_talk,
+                          tooltip: 'Voice call',
+                          color: Colors.white,
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -464,10 +520,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 final messages = snapshot.data!.docs
-                    .map((doc) => ChatMessage.fromFirestore(
-                          doc.id,
-                          doc.data() as Map<String, dynamic>,
-                        ))
+                    .map(
+                      (doc) => ChatMessage.fromFirestore(
+                        doc.id,
+                        doc.data() as Map<String, dynamic>,
+                      ),
+                    )
                     .toList();
 
                 if (messages.isEmpty) {
@@ -502,7 +560,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 // Scroll to bottom when new messages arrive
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _scrollToBottom(),
+                );
 
                 return ListView.builder(
                   controller: _scrollController,
@@ -530,9 +590,7 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: Colors.red.shade50,
-                border: Border(
-                  top: BorderSide(color: Colors.red.shade200),
-                ),
+                border: Border(top: BorderSide(color: Colors.red.shade200)),
               ),
               child: Row(
                 children: [
@@ -592,7 +650,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   // Image button
                   IconButton(
                     icon: const Icon(Icons.image, color: Colors.blue),
-                    onPressed: _isSending || _isRecording ? null : _sendImageMessage,
+                    onPressed: _isSending || _isRecording
+                        ? null
+                        : _sendImageMessage,
                     tooltip: 'Send image',
                   ),
 
@@ -605,7 +665,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       onPressed: _isSending
                           ? null
-                          : (_isRecording ? _stopRecordingAndSend : _startRecording),
+                          : (_isRecording
+                                ? _stopRecordingAndSend
+                                : _startRecording),
                       tooltip: _isRecording ? 'Send voice' : 'Record voice',
                     ),
 
@@ -655,8 +717,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Icon(Icons.send, color: Colors.white, size: 20),
-                      onPressed: (_isSending || _isRecording) ? null : _sendTextMessage,
+                          : const Icon(
+                              Icons.send,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                      onPressed: (_isSending || _isRecording)
+                          ? null
+                          : _sendTextMessage,
                     ),
                   ),
                 ],
@@ -707,7 +775,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
       _audioPlayer.onPositionChanged.listen((position) {
         if (mounted && widget.message.voiceDuration != null) {
           setState(() {
-            _playbackPosition = position.inSeconds / widget.message.voiceDuration!;
+            _playbackPosition =
+                position.inSeconds / widget.message.voiceDuration!;
           });
         }
       });
@@ -759,7 +828,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   child: CircularProgressIndicator(
                     value: loadingProgress.expectedTotalBytes != null
                         ? loadingProgress.cumulativeBytesLoaded /
-                            loadingProgress.expectedTotalBytes!
+                              loadingProgress.expectedTotalBytes!
                         : null,
                   ),
                 );
@@ -808,7 +877,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       widget.formatDuration(widget.message.voiceDuration ?? 0),
                       style: TextStyle(
                         fontSize: 12,
-                        color: widget.isMe ? Colors.white70 : Colors.grey.shade600,
+                        color: widget.isMe
+                            ? Colors.white70
+                            : Colors.grey.shade600,
                       ),
                     ),
                   ],
@@ -840,9 +911,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             // Dismiss on background tap
             GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                color: Colors.black.withOpacity(0.8),
-              ),
+              child: Container(color: Colors.black.withOpacity(0.8)),
             ),
             // Centered image
             Center(
@@ -859,7 +928,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       child: CircularProgressIndicator(
                         value: loadingProgress.expectedTotalBytes != null
                             ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
+                                  loadingProgress.expectedTotalBytes!
                             : null,
                       ),
                     );
@@ -892,8 +961,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         child: Column(
-          crossAxisAlignment:
-              widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: widget.isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -931,10 +1001,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
               padding: const EdgeInsets.only(top: 4, left: 8, right: 8),
               child: Text(
                 widget.timestamp,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade600,
-                ),
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
             ),
           ],
