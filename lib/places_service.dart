@@ -10,6 +10,18 @@ class PlacesService {
   static const String _cloudFunctionUrl =
       'https://us-central1-lighthouse-2498c.cloudfunctions.net/searchNearbyPlaces';
 
+  // CACHING TO PREVENT EXCESSIVE API CALLS
+  static final Map<String, _CachedPlaces> _placesCache = {};
+  static const Duration _cacheExpiration = Duration(minutes: 10);
+
+  // Round coordinates to ~100m precision (3 decimal places)
+  // This prevents API calls for tiny movements
+  static String _getCacheKey(double lat, double lng, String type, int radius) {
+    final roundedLat = lat.toStringAsFixed(3);
+    final roundedLng = lng.toStringAsFixed(3);
+    return '$roundedLat,$roundedLng:$type:$radius';
+  }
+
   /// Calculate distance between two coordinates in meters using Haversine formula
   static double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
     const earthRadius = 6371000.0; // Earth radius in meters
@@ -47,22 +59,43 @@ class PlacesService {
       'fire_station': 'Fire Station',
     };
 
-    for (final entry in facilityTypes.entries) {
+    // OPTIMIZATION: Run all 4 API calls in PARALLEL instead of sequentially
+    // This reduces total fetch time from ~4 seconds to ~1 second
+    print('[PLACES] Fetching ${facilityTypes.length} facility types in parallel...');
+    final startTime = DateTime.now();
+
+    final futures = facilityTypes.entries.map((entry) async {
       try {
         final results = await _fetchNearbyPlaces(lat, lng, entry.key, radiusMeters);
+        final typeFacilities = <GooglePlaceFacility>[];
+
         for (final place in results) {
           final facility = _parsePlaceToFacility(place, entry.value);
 
           // Double-check distance to ensure it's within radius
           final distance = calculateDistance(lat, lng, facility.lat, facility.lng);
           if (distance <= radiusMeters) {
-            facilities.add(facility);
+            typeFacilities.add(facility);
           }
         }
+
+        return typeFacilities;
       } catch (e) {
         print('Error fetching ${entry.key}: $e');
+        return <GooglePlaceFacility>[];
       }
+    }).toList();
+
+    // Wait for all parallel API calls to complete
+    final results = await Future.wait(futures);
+
+    // Flatten all results into single list
+    for (final typeResults in results) {
+      facilities.addAll(typeResults);
     }
+
+    final duration = DateTime.now().difference(startTime);
+    print('[PLACES] ✅ Fetched ${facilities.length} facilities in ${duration.inMilliseconds}ms');
 
     return facilities;
   }
@@ -73,12 +106,37 @@ class PlacesService {
     String type,
     int radiusMeters,
   ) async {
+    // Check cache first
+    final cacheKey = _getCacheKey(lat, lng, type, radiusMeters);
+    final cached = _placesCache[cacheKey];
+
+    if (cached != null && !cached.isExpired) {
+      print('[PLACES CACHE HIT] Saved API call for $type at $cacheKey');
+      print('  Cache age: ${DateTime.now().difference(cached.timestamp).inSeconds}s');
+      return cached.places;
+    }
+
+    if (cached != null && cached.isExpired) {
+      print('[PLACES CACHE] Expired entry removed: $cacheKey');
+      _placesCache.remove(cacheKey);
+    }
+
+    // Cache miss - fetch from API
+    print('[PLACES API CALL] Fetching $type at $lat,$lng radius=$radiusMeters');
+    List<Map<String, dynamic>> results;
+
     // Use Cloud Function on web to avoid CORS, direct API on mobile
     if (kIsWeb) {
-      return _fetchNearbyPlacesViaCloudFunction(lat, lng, type, radiusMeters);
+      results = await _fetchNearbyPlacesViaCloudFunction(lat, lng, type, radiusMeters);
     } else {
-      return _fetchNearbyPlacesDirect(lat, lng, type, radiusMeters);
+      results = await _fetchNearbyPlacesDirect(lat, lng, type, radiusMeters);
     }
+
+    // Cache the result
+    _placesCache[cacheKey] = _CachedPlaces(results);
+    print('[PLACES CACHE] Stored $type: $cacheKey (${_placesCache.length} total cached)');
+
+    return results;
   }
 
   /// Direct API call for mobile platforms
@@ -183,6 +241,18 @@ class PlacesService {
     }
     return null;
   }
+
+  /// Clear old cache entries (call periodically)
+  static void clearExpiredCache() {
+    _placesCache.removeWhere((key, value) => value.isExpired);
+    print('[PLACES CACHE] Cleared expired entries. ${_placesCache.length} remaining.');
+  }
+
+  /// Clear all cache (useful for testing)
+  static void clearAllCache() {
+    _placesCache.clear();
+    print('[PLACES CACHE] Cleared all entries.');
+  }
 }
 
 /// Model for Google Places facility
@@ -208,4 +278,16 @@ class GooglePlaceFacility {
     this.isOpenNow,
     this.userRatingsTotal,
   });
+}
+
+/// Internal cache entry for places
+class _CachedPlaces {
+  final List<Map<String, dynamic>> places;
+  final DateTime timestamp;
+
+  _CachedPlaces(this.places) : timestamp = DateTime.now();
+
+  bool get isExpired {
+    return DateTime.now().difference(timestamp) > PlacesService._cacheExpiration;
+  }
 }

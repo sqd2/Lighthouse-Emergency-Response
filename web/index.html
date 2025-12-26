@@ -107,6 +107,36 @@
     document.addEventListener('gestureend', function(event) {
       event.preventDefault();
     });
+
+    // Fix Android keyboard viewport gap issue
+    let lastHeight = window.innerHeight;
+    window.addEventListener('resize', function() {
+      const currentHeight = window.innerHeight;
+
+      // If height increased significantly (keyboard closed), force viewport reset
+      if (currentHeight > lastHeight + 100) {
+        // Scroll to top to reset viewport
+        window.scrollTo(0, 0);
+
+        // Force layout recalculation
+        document.body.style.height = currentHeight + 'px';
+        setTimeout(() => {
+          document.body.style.height = '100%';
+        }, 100);
+      }
+
+      lastHeight = currentHeight;
+    });
+
+    // Use Visual Viewport API if available (modern browsers)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', function() {
+        // When keyboard closes, reset any offset
+        if (window.visualViewport.height > window.innerHeight * 0.8) {
+          window.scrollTo(0, 0);
+        }
+      });
+    }
   </script>
 
   <!-- Register Firebase Messaging Service Worker -->
@@ -124,7 +154,160 @@
     }
   </script>
 
+  <!-- NUCLEAR PWA White Screen Fix - Aggressive State Cleanup -->
+  <script>
+    (function() {
+      'use strict';
+
+      console.log('[PWA Nuclear Fix] Starting aggressive state cleanup...');
+
+      // STEP 1: Clear ALL caches except Firebase auth
+      try {
+        // Clear sessionStorage completely
+        sessionStorage.clear();
+        console.log('[PWA Nuclear Fix] Session storage cleared');
+
+        // Clear specific localStorage keys that might cause issues
+        // BUT KEEP: firebase:authUser, firebase:host, etc.
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          // Don't remove Firebase auth keys
+          if (key && !key.startsWith('firebase:') && !key.startsWith('firebaseui::')) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => {
+          console.log('[PWA Nuclear Fix] Removing localStorage key:', key);
+          localStorage.removeItem(key);
+        });
+
+        // Clear IndexedDB databases (except Firebase)
+        if (window.indexedDB && window.indexedDB.databases) {
+          window.indexedDB.databases().then(databases => {
+            databases.forEach(db => {
+              // Don't delete Firebase databases
+              if (db.name && !db.name.startsWith('firebase')) {
+                console.log('[PWA Nuclear Fix] Deleting IndexedDB:', db.name);
+                window.indexedDB.deleteDatabase(db.name);
+              }
+            });
+          }).catch(e => {
+            console.error('[PWA Nuclear Fix] Error clearing IndexedDB:', e);
+          });
+        }
+      } catch (e) {
+        console.error('[PWA Nuclear Fix] Error during storage cleanup:', e);
+      }
+
+      // STEP 2: Detect white screen and auto-reload
+      let appLoadTimeout = setTimeout(() => {
+        console.error('[PWA Nuclear Fix] App took too long to load!');
+        const hasFlutterContent = document.querySelector('flt-glass-pane') ||
+                                  document.querySelector('flutter-view') ||
+                                  document.querySelector('canvas');
+
+        if (!hasFlutterContent) {
+          console.error('[PWA Nuclear Fix] NO FLUTTER CONTENT - FORCE RELOAD');
+          // Set flag to prevent infinite reload loop
+          const reloadCount = parseInt(sessionStorage.getItem('reload_count') || '0');
+          if (reloadCount < 3) {
+            sessionStorage.setItem('reload_count', (reloadCount + 1).toString());
+            window.location.reload();
+          } else {
+            console.error('[PWA Nuclear Fix] Too many reloads, giving up');
+            document.body.innerHTML = `
+              <div style="display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; font-family: Arial, sans-serif;">
+                <h1 style="color: #d32f2f;">Failed to Load</h1>
+                <p>Please uninstall and reinstall the app</p>
+                <button onclick="window.location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer;">Try Again</button>
+              </div>
+            `;
+          }
+        }
+      }, 8000); // 8 second timeout
+
+      // Clear timeout once Flutter loads
+      window.addEventListener('flutter-first-frame', () => {
+        clearTimeout(appLoadTimeout);
+        sessionStorage.removeItem('reload_count');
+        console.log('[PWA Nuclear Fix] ✅ Flutter loaded successfully');
+      });
+
+      // STEP 3: Monitor for errors and auto-reload
+      let errorCount = 0;
+      const maxErrors = 5;
+
+      window.addEventListener('error', (event) => {
+        console.error('[PWA Nuclear Fix] ❌ Unhandled error:', event.error);
+        errorCount++;
+        if (errorCount >= maxErrors) {
+          console.error('[PWA Nuclear Fix] Too many errors, reloading...');
+          window.location.reload();
+        }
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        console.error('[PWA Nuclear Fix] ❌ Unhandled promise rejection:', event.reason);
+        // If it's a LiveKit error, reload immediately
+        if (event.reason && event.reason.toString().includes('livekit')) {
+          console.error('[PWA Nuclear Fix] LiveKit error detected, reloading...');
+          window.location.reload();
+        }
+      });
+
+      console.log('[PWA Nuclear Fix] All safeguards active ✅');
+    })();
+  </script>
+
+  <!-- LiveKit Media Track Cleanup Helper for PWA -->
+  <script>
+    // Global function to force stop all active media tracks
+    window.forceStopAllMediaTracks = function() {
+      console.log('[MediaCleanup] Force stopping all active media tracks');
+
+      try {
+        // Stop all MediaStreamTrack instances
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          console.log('[MediaCleanup] Attempting to stop all tracks...');
+
+          // Get all video elements and stop their tracks
+          document.querySelectorAll('video').forEach(function(video) {
+            if (video.srcObject) {
+              console.log('[MediaCleanup] Found video element with srcObject');
+              video.srcObject.getTracks().forEach(function(track) {
+                console.log('[MediaCleanup] Stopping track:', track.kind, track.label);
+                track.stop();
+              });
+              video.srcObject = null;
+            }
+          });
+
+          // Get all audio elements and stop their tracks
+          document.querySelectorAll('audio').forEach(function(audio) {
+            if (audio.srcObject) {
+              console.log('[MediaCleanup] Found audio element with srcObject');
+              audio.srcObject.getTracks().forEach(function(track) {
+                console.log('[MediaCleanup] Stopping track:', track.kind, track.label);
+                track.stop();
+              });
+              audio.srcObject = null;
+            }
+          });
+
+          console.log('[MediaCleanup] ✅ All media tracks stopped');
+          return true;
+        }
+      } catch (e) {
+        console.error('[MediaCleanup] Error stopping media tracks:', e);
+        return false;
+      }
+    };
+
+    console.log('[MediaCleanup] Helper loaded - window.forceStopAllMediaTracks() available');
+  </script>
+
   <!-- Debug Console for iPhone Testing - Load last after everything else -->
-  <script defer src="debug-console.js?v=2.5"></script>
+  <script defer src="debug-console.js?v=2.8"></script>
 </body>
 </html>

@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:html' as html show window;
 import 'edit_profile_screen.dart';
 import 'medical_info_form_screen.dart';
 import '../services/medical_info_service.dart';
+import '../services/livekit_service.dart';
 
 /// Settings page for citizen users
 class CitizenSettingsScreen extends StatefulWidget {
@@ -78,10 +81,32 @@ class _CitizenSettingsScreenState extends State<CitizenSettingsScreen> {
     if (confirmed != true) return;
 
     try {
+      debugPrint('[Logout] Starting cleanup...');
+
+      // Clean up LiveKit service
+      try {
+        final liveKitService = LiveKitService();
+        liveKitService.dispose();
+        debugPrint('[Logout] LiveKit service disposed');
+      } catch (e) {
+        debugPrint('[Logout] Error disposing LiveKit service: $e');
+      }
+
+      // Sign out from Firebase
       await FirebaseAuth.instance.signOut();
+      debugPrint('[Logout] Firebase signed out');
+
       if (!context.mounted) return;
-      Navigator.pushNamedAndRemoveUntil(context, '/', (_) => false);
+
+      // Force page reload for PWA to clear all state
+      if (kIsWeb) {
+        debugPrint('[Logout] Reloading page to clear state...');
+        html.window.location.reload();
+      } else {
+        Navigator.pushNamedAndRemoveUntil(context, '/', (_) => false);
+      }
     } catch (e) {
+      debugPrint('[Logout] Error during logout: $e');
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Logout failed: $e")),

@@ -8,11 +8,15 @@ import '../widgets/facility_details_widget.dart';
 import '../widgets/emergency_alert_widget.dart';
 import '../widgets/notification_permission_banner.dart';
 import '../widgets/dispatcher_side_panel.dart';
+import '../widgets/incoming_call_dialog.dart';
+import '../widgets/facility_filter_widget.dart';
 import '../models/facility_pin.dart';
 import '../models/emergency_alert.dart';
+import '../models/call.dart';
 import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
 import '../services/notification_service.dart';
+import '../services/alert_history_service.dart';
 import 'add_facility_screen.dart';
 import 'dispatcher_settings_screen.dart';
 
@@ -45,8 +49,15 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   StreamSubscription<Position>? _alertLocationStream;
   Position? _lastSharedPosition; // Track last position to implement manual distance filter
 
+  // Call listener
+  StreamSubscription<QuerySnapshot>? _callListener;
+
   // Tab navigation (no PageView - full screen tabs)
   int _currentPageIndex = 1; // Start on Map tab
+
+  // Facility filtering
+  bool _showFacilityFilter = false;
+  List<FacilityPin> _filteredFacilities = [];
 
   @override
   void initState() {
@@ -69,6 +80,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     Future.delayed(const Duration(seconds: 2), () {
       _initializeNotifications();
     });
+    _setupCallListener();
   }
 
   /// Update dispatcher's last known location in Firestore (only if active)
@@ -97,6 +109,38 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     } catch (e) {
       print('Failed to initialize notifications in dispatcher dashboard: $e');
     }
+  }
+
+  /// Set up listener for incoming calls
+  void _setupCallListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Use collectionGroup to listen to all calls across all alerts
+    _callListener = FirebaseFirestore.instance
+        .collectionGroup('calls')
+        .where('receiverId', isEqualTo: user.uid)
+        .where('status', isEqualTo: Call.STATUS_RINGING)
+        .snapshots()
+        .listen((snapshot) {
+      for (var change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added) {
+          final call = Call.fromFirestore(change.doc);
+
+          // Extract alertId from the document path
+          // Path format: emergency_alerts/{alertId}/calls/{callId}
+          final pathSegments = change.doc.reference.path.split('/');
+          if (pathSegments.length >= 2) {
+            final alertId = pathSegments[pathSegments.length - 3];
+
+            // Show incoming call dialog
+            if (mounted) {
+              showIncomingCallDialog(context, alertId, call);
+            }
+          }
+        }
+      }
+    });
   }
 
   Future<void> _loadActiveStatus() async {
@@ -212,6 +256,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   void dispose() {
     disposeLocationTracking();
     _alertLocationStream?.cancel();
+    _callListener?.cancel();
     super.dispose();
   }
 
@@ -635,13 +680,16 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   }
 
   Widget _buildMapPage(List<FacilityPin> allPins, List<EmergencyAlert> alerts) {
+    // Use filtered facilities if filter is active, otherwise show all
+    final displayFacilities = _filteredFacilities.isEmpty ? allPins : _filteredFacilities;
+
     return Stack(
       children: [
         MapView(
           controller: _mapController,
           enableTap: _addMode,
           onMapTap: _handleMapTap,
-          facilities: allPins,
+          facilities: displayFacilities,
           onFacilityTap: _handleFacilityTap,
           emergencyAlerts: alerts,
           onEmergencyAlertTap: _handleEmergencyAlertTap,
@@ -663,18 +711,30 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         Positioned(
           left: 16,
           bottom: 96,
-          child: FloatingActionButton(
-            heroTag: 'add_facility',
-            onPressed: () {
-              if (_addMode) {
-                _mapController.clearTempPin();
-                _disarmAddMode(showSnack: true);
-              } else {
-                _armAddMode();
-              }
-            },
-            backgroundColor: _addMode ? Colors.orange : Colors.red,
-            child: Icon(_addMode ? Icons.close : Icons.add_location_alt),
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: FloatingActionButton(
+              heroTag: 'add_facility',
+              onPressed: () {
+                if (_addMode) {
+                  _mapController.clearTempPin();
+                  _disarmAddMode(showSnack: true);
+                } else {
+                  _armAddMode();
+                }
+              },
+              backgroundColor: _addMode ? Colors.orange : Colors.red,
+              child: Icon(_addMode ? Icons.close : Icons.add_location_alt),
+            ),
           ),
         ),
 
@@ -682,15 +742,78 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         Positioned(
           left: 16,
           bottom: 24,
-          child: FloatingActionButton(
-            heroTag: 'recenter',
-            onPressed: () {
-              _mapController.recenterOnUserLocation();
-            },
-            backgroundColor: Colors.blue,
-            child: const Icon(Icons.my_location),
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: FloatingActionButton(
+              heroTag: 'recenter',
+              onPressed: () {
+                _mapController.recenterOnUserLocation();
+              },
+              backgroundColor: Colors.blue,
+              child: const Icon(Icons.my_location),
+            ),
           ),
         ),
+
+        // Filter Button - Top Right
+        Positioned(
+          right: 16,
+          top: 80,
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: FloatingActionButton(
+              heroTag: 'filter',
+              onPressed: () {
+                setState(() {
+                  _showFacilityFilter = !_showFacilityFilter;
+                  // Reset filter when closing
+                  if (!_showFacilityFilter) {
+                    _filteredFacilities = [];
+                  }
+                });
+              },
+              backgroundColor: _showFacilityFilter ? Colors.green : Colors.white,
+              child: Icon(
+                Icons.filter_list,
+                color: _showFacilityFilter ? Colors.white : Colors.grey[700],
+              ),
+            ),
+          ),
+        ),
+
+        // Filter Widget Overlay
+        if (_showFacilityFilter)
+          Positioned(
+            top: 140,
+            right: 16,
+            left: 16,
+            child: FacilityFilterWidget(
+              allFacilities: allPins,
+              onFilteredFacilities: (filtered) {
+                setState(() {
+                  _filteredFacilities = filtered;
+                });
+              },
+            ),
+          ),
       ],
     );
   }

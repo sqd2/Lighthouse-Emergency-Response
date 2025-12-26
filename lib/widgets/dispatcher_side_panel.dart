@@ -3,10 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/emergency_alert.dart';
+import '../models/call.dart';
 import '../services/alert_history_service.dart';
 import 'alert_list_item.dart';
 import 'date_range_filter.dart';
 import 'chat_screen.dart';
+import 'call_button.dart';
 import 'emergency_alert_widget.dart';
 
 /// Side panel for dispatchers showing alerts and history
@@ -390,6 +392,26 @@ class _DispatcherSidePanelState extends State<DispatcherSidePanel> {
                   Icons.chat,
                   Colors.blue,
                   () => _openChat(alert),
+                ),
+                // Video call button
+                CallActionChip(
+                  alertId: alert.id,
+                  receiverId: alert.userId,
+                  receiverName: alert.userEmail,
+                  callType: Call.TYPE_VIDEO,
+                  label: 'Video Call',
+                  icon: Icons.videocam,
+                  color: Colors.purple,
+                ),
+                // Audio call button
+                CallActionChip(
+                  alertId: alert.id,
+                  receiverId: alert.userId,
+                  receiverName: alert.userEmail,
+                  callType: Call.TYPE_AUDIO,
+                  label: 'Voice Call',
+                  icon: Icons.phone,
+                  color: Colors.green,
                 ),
                 _buildActionChip(
                   'Navigate',

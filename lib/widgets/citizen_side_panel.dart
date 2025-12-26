@@ -3,10 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/emergency_alert.dart';
+import '../models/call.dart';
 import '../services/alert_history_service.dart';
 import 'alert_list_item.dart';
 import 'date_range_filter.dart';
 import 'chat_screen.dart';
+import 'call_button.dart';
 import 'status_badge.dart';
 
 /// Side panel for citizens showing their SOS alerts
@@ -274,31 +276,58 @@ class _CitizenSidePanelState extends State<CitizenSidePanel> {
               ),
             ],
             const SizedBox(height: 16),
-            Row(
-              children: [
-                if (alert.hasDispatcher)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openChat(alert),
-                      icon: const Icon(Icons.chat, size: 18),
-                      label: const Text('Chat'),
-                    ),
+            if (alert.hasDispatcher) ...[
+              const Text(
+                'Contact Dispatcher',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  CallActionChip(
+                    alertId: alert.id,
+                    receiverId: alert.acceptedBy!,
+                    receiverName: alert.acceptedByEmail ?? 'Dispatcher',
+                    callType: Call.TYPE_VIDEO,
+                    label: 'Video',
+                    icon: Icons.videocam,
+                    color: Colors.purple,
                   ),
-                if (alert.hasDispatcher) const SizedBox(width: 8),
-                if (!alert.isResolved && !alert.isCancelled)
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => _cancelAlert(alert),
-                      icon: const Icon(Icons.cancel, size: 18),
-                      label: const Text('Cancel'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
+                  CallActionChip(
+                    alertId: alert.id,
+                    receiverId: alert.acceptedBy!,
+                    receiverName: alert.acceptedByEmail ?? 'Dispatcher',
+                    callType: Call.TYPE_AUDIO,
+                    label: 'Voice',
+                    icon: Icons.phone,
+                    color: Colors.green,
                   ),
-              ],
-            ),
+                  ActionChip(
+                    avatar: const Icon(Icons.chat, size: 18, color: Colors.blue),
+                    label: const Text('Chat'),
+                    onPressed: () => _openChat(alert),
+                    backgroundColor: Colors.blue.withOpacity(0.1),
+                    side: const BorderSide(color: Colors.blue),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (!alert.isResolved && !alert.isCancelled)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _cancelAlert(alert),
+                  icon: const Icon(Icons.cancel, size: 18),
+                  label: const Text('Cancel Alert'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

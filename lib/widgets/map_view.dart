@@ -42,6 +42,7 @@ class MapView extends StatefulWidget {
     this.dispatcherLocation,
     this.dispatcherName,
     this.debugMode = false,
+    this.disableMarkerTaps = false,
   });
 
   /// When true, a tap places a temporary pin and calls [onMapTap].
@@ -77,6 +78,9 @@ class MapView extends StatefulWidget {
 
   /// When true, shows facility pins, emergency alerts, and debug HUD
   final bool debugMode;
+
+  /// When true, disables marker onTap to prevent click-through from overlays
+  final bool disableMarkerTaps;
 
   @override
   State<MapView> createState() => _MapViewState();
@@ -472,6 +476,8 @@ class _MapViewState extends State<MapView> {
   }
 
   void _updateInterpolation() {
+    if (!mounted) return; // Safety check
+
     if (_currentDisplayPosition == null ||
         _targetPosition == null ||
         _interpolationStartTime == null) {
@@ -491,10 +497,12 @@ class _MapViewState extends State<MapView> {
       progress,
     );
 
-    setState(() {
-      _userPosition = newPosition;
-      _currentDisplayPosition = newPosition;
-    });
+    if (mounted) {
+      setState(() {
+        _userPosition = newPosition;
+        _currentDisplayPosition = newPosition;
+      });
+    }
 
     // Only animate camera if followUserLocation is enabled
     if (widget.followUserLocation) {
@@ -543,6 +551,8 @@ class _MapViewState extends State<MapView> {
 
   /// Update all markers on the map
   void _updateMarkers() {
+    if (!mounted) return; // Safety check
+
     final markers = <String, Marker>{};
 
     // User position marker (blue circular dot)
@@ -578,7 +588,7 @@ class _MapViewState extends State<MapView> {
         position: LatLng(facility.lat, facility.lon),
         icon: icon,
         infoWindow: InfoWindow(title: facility.name, snippet: facility.type),
-        onTap: () => widget.onFacilityTap?.call(facility),
+        onTap: widget.disableMarkerTaps ? null : () => widget.onFacilityTap?.call(facility),
         zIndex: 50,
       );
     }
@@ -595,7 +605,7 @@ class _MapViewState extends State<MapView> {
             title: 'Emergency Alert',
             snippet: alert.description,
           ),
-          onTap: () => widget.onEmergencyAlertTap?.call(alert),
+          onTap: widget.disableMarkerTaps ? null : () => widget.onEmergencyAlertTap?.call(alert),
           zIndex: 75,
         );
       }
@@ -627,10 +637,12 @@ class _MapViewState extends State<MapView> {
       );
     }
 
-    setState(() {
-      _markers.clear();
-      _markers.addAll(markers);
-    });
+    if (mounted) {
+      setState(() {
+        _markers.clear();
+        _markers.addAll(markers);
+      });
+    }
   }
 
   /// Get marker hue based on facility type
@@ -671,9 +683,11 @@ class _MapViewState extends State<MapView> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        GoogleMap(
+    // Defensive: catch any map rendering errors
+    try {
+      return Stack(
+        children: [
+          GoogleMap(
           onMapCreated: _onMapCreated,
           initialCameraPosition: const CameraPosition(
             target: LatLng(3.1390, 101.6869), // KL default
@@ -710,7 +724,50 @@ class _MapViewState extends State<MapView> {
               ),
             ),
           ),
-      ],
-    );
+        ],
+      );
+    } catch (e, stack) {
+      debugPrint('[MapView] Error building map: $e');
+      debugPrint('[MapView] Stack: $stack');
+
+      // Return error UI instead of crashing
+      return Container(
+        color: Colors.grey[200],
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.map_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'Map Error',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                e.toString(),
+                style: const TextStyle(fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  // Try to reload the widget
+                  if (mounted) {
+                    setState(() {
+                      // Reset state
+                      _markers.clear();
+                      _userPosition = null;
+                      _tempPinPosition = null;
+                    });
+                  }
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
   }
 }

@@ -1,12 +1,18 @@
-const {onRequest} = require("firebase-functions/v2/https");
+const {onRequest, onCall} = require("firebase-functions/v2/https");
 const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 const cors = require("cors")({origin: true});
+const {AccessToken} = require("livekit-server-sdk");
 
 // Initialize Firebase Admin SDK
 admin.initializeApp();
 
 const GOOGLE_API_KEY = "GOOGLE_MAPS_API_KEY";
+
+// LiveKit credentials
+const LIVEKIT_URL = "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud";
+const LIVEKIT_API_KEY = "LIVEKIT_API_KEY";
+const LIVEKIT_API_SECRET = "LIVEKIT_API_SECRET";
 
 /**
  * Calculate distance between two coordinates using Haversine formula
@@ -667,5 +673,147 @@ exports.onMessageSent = onDocumentCreated("emergency_alerts/{alertId}/messages/{
     console.log(`✅ Notified ${recipientName} of new message`);
   } catch (error) {
     console.error("❌ Error in onMessageSent:", error);
+  }
+});
+
+/**
+ * Cloud Function: Notify receiver when incoming call is created
+ */
+exports.onCallCreated = onDocumentCreated("emergency_alerts/{alertId}/calls/{callId}", async (event) => {
+  const callData = event.data.data();
+  const alertId = event.params.alertId;
+  const callId = event.params.callId;
+
+  console.log(`📞 New call created: ${callId} in alert ${alertId}`);
+  console.log(`📋 Status: ${callData.status}, Type: ${callData.type}`);
+
+  // Only send notification if call is ringing
+  if (callData.status !== "ringing") {
+    console.log(`ℹ️ Call not ringing (status: ${callData.status}), skipping notification`);
+    return;
+  }
+
+  try {
+    const receiverId = callData.receiverId;
+    const callerName = callData.callerName || "Unknown";
+    const callType = callData.type === "video" ? "Video" : "Voice";
+    const callerRole = callData.callerRole === "dispatcher" ? "Dispatcher" : "Citizen";
+
+    console.log(`📲 Sending incoming call notification to ${receiverId}`);
+    console.log(`📞 ${callType} call from ${callerName} (${callerRole})`);
+
+    await sendNotificationToUser(
+        receiverId,
+        `📞 Incoming ${callType} Call`,
+        `${callerName} (${callerRole}) is calling you`,
+        {
+          type: "incoming_call",
+          alertId: alertId,
+          callId: callId,
+          callerId: callData.callerId,
+          callerName: callerName,
+          callerRole: callData.callerRole,
+          callType: callData.type,
+          roomName: callData.roomName,
+        },
+    );
+
+    console.log(`✅ Sent incoming call notification to ${receiverId}`);
+  } catch (error) {
+    console.error("❌ Error in onCallCreated:", error);
+  }
+});
+
+/**
+ * Cloud Function: Generate LiveKit access token for WebRTC calls
+ * Callable function that verifies user authorization and generates token
+ */
+exports.generateLiveKitToken = onCall(async (request) => {
+  try {
+    // Get authenticated user
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new Error("User must be authenticated");
+    }
+
+    console.log(`🎥 Generating LiveKit token for user ${userId}`);
+
+    const {alertId, callId, roomName} = request.data;
+
+    // Validate input
+    if (!alertId || !callId || !roomName) {
+      throw new Error("Missing required parameters: alertId, callId, roomName");
+    }
+
+    console.log(`📋 Alert ID: ${alertId}, Call ID: ${callId}, Room: ${roomName}`);
+
+    // Verify user is authorized (part of the alert)
+    const alertDoc = await admin.firestore()
+        .collection("emergency_alerts")
+        .doc(alertId)
+        .get();
+
+    if (!alertDoc.exists) {
+      throw new Error("Alert not found");
+    }
+
+    const alertData = alertDoc.data();
+    const isAuthorized =
+      userId === alertData.userId || // Citizen
+      userId === alertData.acceptedBy; // Dispatcher
+
+    if (!isAuthorized) {
+      console.error(`❌ User ${userId} not authorized for alert ${alertId}`);
+      throw new Error("User not authorized for this alert");
+    }
+
+    // Get call data to verify
+    const callDoc = await admin.firestore()
+        .collection("emergency_alerts")
+        .doc(alertId)
+        .collection("calls")
+        .doc(callId)
+        .get();
+
+    if (!callDoc.exists) {
+      throw new Error("Call not found");
+    }
+
+    const callData = callDoc.data();
+
+    // Verify user is participant in the call
+    if (userId !== callData.callerId && userId !== callData.receiverId) {
+      console.error(`❌ User ${userId} not participant in call ${callId}`);
+      throw new Error("User not a participant in this call");
+    }
+
+    console.log(`✅ User authorized for call`);
+
+    // Generate LiveKit access token
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+      identity: userId,
+      ttl: "2h", // Token valid for 2 hours
+    });
+
+    // Grant permissions
+    at.addGrant({
+      roomJoin: true,
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+
+    const token = await at.toJwt();
+
+    console.log(`✅ Generated token for ${userId} in room ${roomName}`);
+
+    return {
+      token: token,
+      serverUrl: "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud",
+    };
+  } catch (error) {
+    console.error("❌ Error generating LiveKit token:", error);
+    throw new Error(`Failed to generate token: ${error.message}`);
   }
 });

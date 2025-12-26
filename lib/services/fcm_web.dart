@@ -356,16 +356,22 @@ class FCMWeb {
 
       // Convert JS Promise to Dart Future
       final thenFunc = js.allowInterop((result) {
-        completer.complete(result);
+        if (!completer.isCompleted) {
+          completer.complete(result);
+        }
       });
 
       final catchFunc = js.allowInterop((error) {
-        completer.completeError(error);
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
       });
 
       promise.callMethod('then', [thenFunc]).callMethod('catch', [catchFunc]);
     } catch (e) {
-      completer.completeError(e);
+      if (!completer.isCompleted) {
+        completer.completeError(e);
+      }
     }
 
     return completer.future;
