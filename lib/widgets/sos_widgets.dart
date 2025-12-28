@@ -76,17 +76,38 @@ class _SOSSheetState extends State<SOSSheet> {
         throw Exception('User not authenticated');
       }
 
+      // Check for existing pending or active SOS
+      final existingAlerts = await FirebaseFirestore.instance
+          .collection('emergency_alerts')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', whereIn: [EmergencyAlert.STATUS_PENDING, EmergencyAlert.STATUS_ACTIVE])
+          .limit(1)
+          .get();
+
+      if (existingAlerts.docs.isNotEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You already have an active SOS. Please cancel or wait for it to be resolved before creating a new one.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+        setState(() => _submitting = false);
+        return;
+      }
+
       // Try to get encrypted medical info
       Map<String, dynamic>? encryptedMedicalInfo;
       try {
         encryptedMedicalInfo = await MedicalInfoService.getEncryptedMedicalInfo();
         if (encryptedMedicalInfo != null) {
-          print('✅ Including encrypted medical info in SOS alert');
+          print(' Including encrypted medical info in SOS alert');
         } else {
-          print('⚠️ No medical info available for this user');
+          print('[WARN] No medical info available for this user');
         }
       } catch (e) {
-        print('⚠️ Failed to get medical info for SOS: $e');
+        print('[WARN] Failed to get medical info for SOS: $e');
         // Continue without medical info - it's optional
       }
 

@@ -13,6 +13,7 @@ mixin RouteNavigationMixin<T extends StatefulWidget> on State<T> {
   RouteInfo? _currentRouteInfo;
   double? _destinationLat;
   double? _destinationLon;
+  String? _destinationName;
   Position? _lastRouteUpdatePosition;
 
   // Route tracking thresholds
@@ -24,6 +25,7 @@ mixin RouteNavigationMixin<T extends StatefulWidget> on State<T> {
   RouteInfo? get currentRouteInfo => _currentRouteInfo;
   double? get destinationLat => _destinationLat;
   double? get destinationLon => _destinationLon;
+  String? get destinationName => _destinationName;
 
   /// Calculate and display a route to the given destination
   Future<void> navigateToLocation({
@@ -138,6 +140,7 @@ mixin RouteNavigationMixin<T extends StatefulWidget> on State<T> {
       _currentRouteInfo = route;
       _destinationLat = destLat;
       _destinationLon = destLng;
+      _destinationName = locationName;
       _lastRouteUpdatePosition = userLocation;
       _currentRoute = Polyline(
         polylineId: PolylineId(
@@ -183,6 +186,7 @@ mixin RouteNavigationMixin<T extends StatefulWidget> on State<T> {
       _currentRouteInfo = null;
       _destinationLat = null;
       _destinationLon = null;
+      _destinationName = null;
       _lastRouteUpdatePosition = null;
     });
   }

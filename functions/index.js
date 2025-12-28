@@ -1,22 +1,31 @@
 const {onRequest, onCall} = require("firebase-functions/v2/https");
 const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
+const {defineString} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const cors = require("cors")({origin: true});
 const {AccessToken} = require("livekit-server-sdk");
+const nodemailer = require("nodemailer");
+const {Resend} = require("resend");
+
+// Define environment parameters
+const resendApiKey = defineString("RESEND_API_KEY");
+const twilioAccountSid = defineString("TWILIO_ACCOUNT_SID");
+const twilioAuthToken = defineString("TWILIO_AUTH_TOKEN");
+const twilioPhoneNumber = defineString("TWILIO_PHONE_NUMBER");
 
 // Initialize Firebase Admin SDK
 admin.initializeApp();
 
 const GOOGLE_API_KEY = "AIzaSyCvvz3UmQXQR9PzRUeYlNu2wJqpxG8FvuQ";
 
-// LiveKit credentials
+// LiveKit WebRTC configuration
 const LIVEKIT_URL = "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud";
 const LIVEKIT_API_KEY = "APIyPzoZFJ78KTh";
 const LIVEKIT_API_SECRET = "EyUTouWgpzAEO6WF3NrHiwBsSQ9mRQ6eoyyyf920LGA";
 
 /**
- * Calculate distance between two coordinates using Haversine formula
- * Returns distance in kilometers
+ * Calculate distance between two geographic coordinates using Haversine formula.
+ * Returns distance in kilometers.
  */
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Earth's radius in kilometers
@@ -187,7 +196,7 @@ exports.testNotification = onRequest(async (request, response) => {
       const message = {
         data: {
           type: "test",
-          title: "🧪 Test Notification",
+          title: "[TEST] Test Notification",
           body: "This is a test notification from Firebase Functions!",
         },
         token: fcmToken,
@@ -213,32 +222,62 @@ exports.testNotification = onRequest(async (request, response) => {
 });
 
 /**
- * Sends a notification to a specific user (all their devices)
+ * Helper function to get user name by user ID
+ * Returns user's name or email as fallback
+ */
+async function getUserName(userId) {
+  try {
+    const userDoc = await admin.firestore().collection("users").doc(userId).get();
+    if (!userDoc.exists) {
+      return "Unknown User";
+    }
+    const userData = userDoc.data();
+    return userData.name || userData.email || "Unknown User";
+  } catch (error) {
+    console.error(`[ERROR] Error fetching user name for ${userId}:`, error);
+    return "Unknown User";
+  }
+}
+
+/**
+ * Helper function to format user display as "Name (email)"
+ * If name is not available or same as email, returns just the name/email
+ */
+function formatUserDisplay(name, email) {
+  if (!name || !email || name === email) {
+    return name || email || "Unknown User";
+  }
+  return `${name} (${email})`;
+}
+
+/**
+ * Send notification to all registered devices for a specific user.
+ * Handles both new multi-device format and legacy single token format.
  */
 async function sendNotificationToUser(userId, title, body, data = {}) {
   try {
-    console.log(`📤 Attempting to send notification to user ${userId}`);
-    console.log(`📋 Title: ${title}`);
-    console.log(`📋 Body: ${body}`);
+    console.log(`[SEND] Attempting to send notification to user ${userId}`);
+    console.log(`[INFO] Title: ${title}`);
+    console.log(`[INFO] Body: ${body}`);
 
     // Get user's FCM tokens
     const userDoc = await admin.firestore().collection("users").doc(userId).get();
 
     if (!userDoc.exists) {
-      console.log(`❌ User ${userId} not found in Firestore`);
+      console.log(`[ERROR] User ${userId} not found in Firestore`);
       return;
     }
 
     const userData = userDoc.data();
-    console.log(`✅ User found: ${userData.email || userId}`);
-    console.log(`📱 Role: ${userData.role}`);
+    console.log(`[SUCCESS] User found: ${userData.email || userId}`);
+    console.log(`[SMS] Role: ${userData.role}`);
 
     // Get all tokens (new array format)
     const fcmTokens = userData.fcmTokens || [];
     const legacyToken = userData.fcmToken; // Fallback for old single-token format
 
-    console.log(`🔔 Has ${fcmTokens.length} device token(s)`);
-    console.log(`🔔 Has legacy token: ${!!legacyToken}`);
+    console.log(`[NOTIF] Has ${fcmTokens.length} device token(s)`);
+    console.log(`[NOTIF] Has legacy token: ${!!legacyToken}`);
 
     // Combine tokens: new array format + legacy single token (if exists and not in array)
     const allTokens = [...fcmTokens];
@@ -247,12 +286,12 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
     }
 
     if (allTokens.length === 0) {
-      console.log(`❌ User ${userId} (${userData.email}) has no FCM tokens`);
+      console.log(`[ERROR] User ${userId} (${userData.email}) has no FCM tokens`);
       return;
     }
 
     // Send to all devices
-    console.log(`🚀 Sending to ${allTokens.length} device(s)...`);
+    console.log(`[DEPLOY] Sending to ${allTokens.length} device(s)...`);
     const invalidTokens = [];
 
     for (let i = 0; i < allTokens.length; i++) {
@@ -260,7 +299,7 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
       const token = tokenData.token;
       const platform = tokenData.platform || "unknown";
 
-      console.log(`  📲 Device ${i + 1}/${allTokens.length} (${platform}): ${token.substring(0, 20)}...`);
+      console.log(`  [DEVICE] Device ${i + 1}/${allTokens.length} (${platform}): ${token.substring(0, 20)}...`);
 
       try {
         // Send data-only message (no notification field)
@@ -276,14 +315,14 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
         };
 
         const response = await admin.messaging().send(message);
-        console.log(`  ✅ Sent to device ${i + 1} (${platform}), Message ID: ${response}`);
+        console.log(`  [SUCCESS] Sent to device ${i + 1} (${platform}), Message ID: ${response}`);
       } catch (error) {
-        console.error(`  ❌ Failed to send to device ${i + 1} (${platform}):`, error.code);
+        console.error(`  [ERROR] Failed to send to device ${i + 1} (${platform}):`, error.code);
 
         // Track invalid tokens for cleanup
         if (error.code === "messaging/invalid-registration-token" ||
             error.code === "messaging/registration-token-not-registered") {
-          console.log(`  🗑️ Marking token for removal: ${token.substring(0, 20)}...`);
+          console.log(`  [REMOVE] Marking token for removal: ${token.substring(0, 20)}...`);
           invalidTokens.push(token);
         }
       }
@@ -291,29 +330,33 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
 
     // Clean up invalid tokens
     if (invalidTokens.length > 0) {
-      console.log(`🧹 Removing ${invalidTokens.length} invalid token(s)...`);
+      console.log(`[CLEANUP] Removing ${invalidTokens.length} invalid token(s)...`);
       const validTokens = fcmTokens.filter((t) => !invalidTokens.includes(t.token));
       await userDoc.ref.update({
         fcmTokens: validTokens,
       });
-      console.log(`✅ Cleaned up invalid tokens. Remaining: ${validTokens.length}`);
+      console.log(`[SUCCESS] Cleaned up invalid tokens. Remaining: ${validTokens.length}`);
     }
 
-    console.log(`✅ Finished sending notifications to ${userData.email || userId}`);
+    console.log(`[SUCCESS] Finished sending notifications to ${userData.email || userId}`);
   } catch (error) {
-    console.error(`❌ Error sending notification to ${userId}:`, error.code, error.message);
+    console.error(`[ERROR] Error sending notification to ${userId}:`, error.code, error.message);
   }
 }
 
 /**
- * Cloud Function: Notify active dispatchers when a new SOS is created
- * Uses proximity-based assignment to notify only the nearest dispatchers
+ * Notify active dispatchers when a new SOS alert is created.
+ * Calculates proximity and sends notifications to all active dispatchers.
  */
 exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (event) => {
   const alertData = event.data.data();
   const alertId = event.params.alertId;
 
-  console.log(`🚨 New SOS created: ${alertId} from ${alertData.userEmail}`);
+  console.log(`[ALERT] New SOS created: ${alertId} from ${alertData.userEmail}`);
+
+  // Get citizen's name for notifications
+  const citizenName = await getUserName(alertData.userId);
+  const citizenDisplay = formatUserDisplay(citizenName, alertData.userEmail);
 
   // Extract lat/lon from GeoPoint or separate fields (backward compatibility)
   let alertLat, alertLon;
@@ -327,27 +370,27 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
     alertLon = alertData.lon;
   }
 
-  console.log(`📍 Alert location: ${alertLat}, ${alertLon}`);
+  console.log(`[LOCATION] Alert location: ${alertLat}, ${alertLon}`);
 
   // Validate alert location data
   if (!alertLat || !alertLon || isNaN(alertLat) || isNaN(alertLon)) {
-    console.error(`❌ Invalid alert location data: lat=${alertLat}, lon=${alertLon}`);
+    console.error(`[ERROR] Invalid alert location data: lat=${alertLat}, lon=${alertLon}`);
     return;
   }
 
   try {
     // Get all active dispatchers
-    console.log("🔍 Searching for active dispatchers...");
+    console.log("[SEARCH] Searching for active dispatchers...");
     const dispatchersSnapshot = await admin.firestore()
         .collection("users")
         .where("role", "==", "dispatcher")
         .where("isActive", "==", true)
         .get();
 
-    console.log(`📊 Found ${dispatchersSnapshot.size} active dispatcher(s)`);
+    console.log(`[DATA] Found ${dispatchersSnapshot.size} active dispatcher(s)`);
 
     if (dispatchersSnapshot.empty) {
-      console.log("❌ No active dispatchers found");
+      console.log("[ERROR] No active dispatchers found");
       return;
     }
 
@@ -365,7 +408,7 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
 
         // Validate dispatcher location
         if (isNaN(dispatcherLat) || isNaN(dispatcherLon)) {
-          console.log(`⚠️ Dispatcher ${data.email} has invalid location: lat=${dispatcherLat}, lon=${dispatcherLon} - skipping`);
+          console.log(`[WARN] Dispatcher ${data.email} has invalid location: lat=${dispatcherLat}, lon=${dispatcherLon} - skipping`);
           return;
         }
 
@@ -379,7 +422,7 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
 
         // Validate calculated distance
         if (isNaN(distance)) {
-          console.error(`❌ Distance calculation returned NaN for dispatcher ${data.email}`);
+          console.error(`[ERROR] Distance calculation returned NaN for dispatcher ${data.email}`);
           console.error(`   Dispatcher: lat=${dispatcherLat}, lon=${dispatcherLon}`);
           console.error(`   Alert: lat=${alertLat}, lon=${alertLon}`);
           return;
@@ -392,14 +435,14 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
           hasToken: !!(data.fcmToken || (data.fcmTokens && data.fcmTokens.length > 0)),
         });
 
-        console.log(`👤 Dispatcher: ${data.email}, Distance: ${distance.toFixed(2)} km`);
+        console.log(`[USER] Dispatcher: ${data.email}, Distance: ${distance.toFixed(2)} km`);
       } else {
-        console.log(`⚠️ Dispatcher ${data.email} has no location data - skipping`);
+        console.log(`[WARN] Dispatcher ${data.email} has no location data - skipping`);
       }
     });
 
     if (dispatchersWithDistance.length === 0) {
-      console.log("❌ No dispatchers with location data found");
+      console.log("[ERROR] No dispatchers with location data found");
       return;
     }
 
@@ -407,7 +450,7 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
     dispatchersWithDistance.sort((a, b) => a.distance - b.distance);
 
     // Notify ALL dispatchers (no distance limitation)
-    console.log(`📍 Notifying ALL ${dispatchersWithDistance.length} active dispatcher(s):`);
+    console.log(`[LOCATION] Notifying ALL ${dispatchersWithDistance.length} active dispatcher(s):`);
     dispatchersWithDistance.forEach((d, index) => {
       console.log(`  ${index + 1}. ${d.email} - ${d.distance.toFixed(2)} km away`);
     });
@@ -420,8 +463,8 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
 
       return sendNotificationToUser(
           dispatcher.id,
-          "🚨 New Emergency Alert",
-          `Emergency SOS from ${alertData.userEmail} - ${distanceText} away`,
+          "[ALERT] New Emergency Alert",
+          `Emergency SOS from ${citizenDisplay} - ${distanceText} away`,
           {
             type: "new_sos",
             alertId: alertId,
@@ -432,9 +475,27 @@ exports.onSOSCreated = onDocumentCreated("emergency_alerts/{alertId}", async (ev
     });
 
     await Promise.all(notificationPromises);
-    console.log(`✅ Notified ${dispatchersWithDistance.length} dispatcher(s) - ALL active dispatchers notified`);
+    console.log(`[SUCCESS] Notified ${dispatchersWithDistance.length} dispatcher(s) - ALL active dispatchers notified`);
+
+    // Notify emergency contact
+    console.log("[EMERGENCY_CONTACT] Attempting to notify emergency contact for user:", alertData.userId);
+    try {
+      const locationUrl = `https://www.google.com/maps?q=${alertLat},${alertLon}`;
+      const emergencyMessage = `EMERGENCY ALERT: ${citizenName || alertData.userEmail} has initiated an SOS.\n\nDescription: ${alertData.description || "No description provided"}\n\nLocation: ${locationUrl}\n\nStatus: Emergency services have been notified.`;
+
+      await notifyEmergencyContact(
+          alertData.userId,
+          citizenName,
+          alertData.userEmail,
+          emergencyMessage,
+          "[URGENT] Emergency SOS Initiated",
+      );
+      console.log("[EMERGENCY_CONTACT] Emergency contact notification process completed");
+    } catch (emergencyContactError) {
+      console.error("[EMERGENCY_CONTACT] Failed to notify emergency contact:", emergencyContactError);
+    }
   } catch (error) {
-    console.error("❌ Error in onSOSCreated:", error);
+    console.error("[ERROR] Error in onSOSCreated:", error);
   }
 });
 
@@ -452,15 +513,19 @@ exports.onSOSAccepted = onDocumentUpdated("emergency_alerts/{alertId}", async (e
   const hasDispatcher = afterData.acceptedBy && !beforeData.acceptedBy;
 
   if (wasPending && nowActive && hasDispatcher) {
-    console.log(`✅ SOS ${alertId} accepted by ${afterData.acceptedByEmail}`);
+    console.log(`[SUCCESS] SOS ${alertId} accepted by ${afterData.acceptedByEmail}`);
 
     try {
       const citizenId = afterData.userId;
 
+      // Get dispatcher's name for notification
+      const dispatcherName = await getUserName(afterData.acceptedBy);
+      const dispatcherDisplay = formatUserDisplay(dispatcherName, afterData.acceptedByEmail);
+
       await sendNotificationToUser(
           citizenId,
-          "✅ Help is on the way!",
-          `Dispatcher ${afterData.acceptedByEmail} has accepted your emergency request`,
+          "[SUCCESS] Help is on the way!",
+          `Dispatcher ${dispatcherDisplay} has accepted your emergency request`,
           {
             type: "sos_accepted",
             alertId: alertId,
@@ -468,9 +533,21 @@ exports.onSOSAccepted = onDocumentUpdated("emergency_alerts/{alertId}", async (e
           },
       );
 
-      console.log(`📲 Notified citizen ${citizenId} of SOS acceptance`);
+      console.log(`[DEVICE] Notified citizen ${citizenId} of SOS acceptance`);
+
+      // Notify emergency contact
+      const citizenName = await getUserName(afterData.userId);
+      const updateMessage = `SOS UPDATE: A dispatcher (${dispatcherDisplay}) has accepted the emergency alert from ${citizenName || afterData.userEmail}.\n\nStatus: Help is on the way!\n\nAlert ID: ${alertId}`;
+
+      await notifyEmergencyContact(
+          afterData.userId,
+          citizenName,
+          afterData.userEmail,
+          updateMessage,
+          "[UPDATE] Emergency Help Accepted",
+      );
     } catch (error) {
-      console.error("❌ Error in onSOSAccepted:", error);
+      console.error("[ERROR] Error in onSOSAccepted:", error);
     }
   }
 });
@@ -487,16 +564,20 @@ exports.onDispatcherArrived = onDocumentUpdated("emergency_alerts/{alertId}", as
   const statusChanged = beforeData.status === "active" && afterData.status === "arrived";
 
   if (statusChanged) {
-    console.log(`🎯 Dispatcher arrived at alert ${alertId}`);
+    console.log(`[TARGET] Dispatcher arrived at alert ${alertId}`);
 
     try {
       const citizenId = afterData.userId;
       const dispatcherEmail = afterData.acceptedByEmail || "Dispatcher";
 
+      // Get dispatcher's name for notification
+      const dispatcherName = afterData.acceptedBy ? await getUserName(afterData.acceptedBy) : dispatcherEmail;
+      const dispatcherDisplay = formatUserDisplay(dispatcherName, dispatcherEmail);
+
       await sendNotificationToUser(
           citizenId,
-          "🚨 Dispatcher Arrived",
-          `${dispatcherEmail} has arrived at your location`,
+          "[ALERT] Dispatcher Arrived",
+          `${dispatcherDisplay} has arrived at your location`,
           {
             type: "dispatcher_arrived",
             alertId: alertId,
@@ -504,9 +585,21 @@ exports.onDispatcherArrived = onDocumentUpdated("emergency_alerts/{alertId}", as
           },
       );
 
-      console.log(`📲 Notified citizen ${citizenId} of dispatcher arrival`);
+      console.log(`[DEVICE] Notified citizen ${citizenId} of dispatcher arrival`);
+
+      // Notify emergency contact
+      const citizenName = await getUserName(afterData.userId);
+      const updateMessage = `SOS UPDATE: Dispatcher (${dispatcherDisplay}) has arrived at the emergency location for ${citizenName || afterData.userEmail}.\n\nStatus: Help has arrived!\n\nAlert ID: ${alertId}`;
+
+      await notifyEmergencyContact(
+          afterData.userId,
+          citizenName,
+          afterData.userEmail,
+          updateMessage,
+          "[UPDATE] Emergency Help Arrived",
+      );
     } catch (error) {
-      console.error("❌ Error in onDispatcherArrived:", error);
+      console.error("[ERROR] Error in onDispatcherArrived:", error);
     }
   }
 });
@@ -523,7 +616,7 @@ exports.onSOSCancelled = onDocumentUpdated("emergency_alerts/{alertId}", async (
   const wasCancelled = afterData.status === "cancelled" && beforeData.status !== "cancelled";
 
   if (wasCancelled) {
-    console.log(`❌ SOS ${alertId} cancelled by citizen`);
+    console.log(`[ERROR] SOS ${alertId} cancelled by citizen`);
 
     try {
       const dispatcherId = afterData.acceptedBy;
@@ -532,10 +625,14 @@ exports.onSOSCancelled = onDocumentUpdated("emergency_alerts/{alertId}", async (
 
       // Only notify if a dispatcher had accepted
       if (dispatcherId) {
+        // Get citizen's name for notification
+        const citizenName = await getUserName(afterData.userId);
+        const citizenDisplay = formatUserDisplay(citizenName, citizenEmail);
+
         await sendNotificationToUser(
             dispatcherId,
-            "⚠️ Alert Cancelled",
-            `${citizenEmail} cancelled their emergency alert. Reason: ${cancellationReason}`,
+            "[WARN] Alert Cancelled",
+            `${citizenDisplay} cancelled their emergency alert. Reason: ${cancellationReason}`,
             {
               type: "sos_cancelled",
               alertId: alertId,
@@ -544,10 +641,22 @@ exports.onSOSCancelled = onDocumentUpdated("emergency_alerts/{alertId}", async (
             },
         );
 
-        console.log(`📲 Notified dispatcher ${dispatcherId} of cancellation`);
+        console.log(`[DEVICE] Notified dispatcher ${dispatcherId} of cancellation`);
       }
+
+      // Notify emergency contact
+      const citizenName = await getUserName(afterData.userId);
+      const updateMessage = `SOS UPDATE: The emergency alert from ${citizenName || citizenEmail} has been CANCELLED.\n\nReason: ${cancellationReason}\n\nStatus: Alert resolved - No longer active.\n\nAlert ID: ${alertId}`;
+
+      await notifyEmergencyContact(
+          afterData.userId,
+          citizenName,
+          citizenEmail,
+          updateMessage,
+          "[RESOLVED] Emergency Cancelled",
+      );
     } catch (error) {
-      console.error("❌ Error in onSOSCancelled:", error);
+      console.error("[ERROR] Error in onSOSCancelled:", error);
     }
   }
 });
@@ -564,16 +673,20 @@ exports.onSOSResolved = onDocumentUpdated("emergency_alerts/{alertId}", async (e
   const wasResolved = afterData.status === "resolved" && beforeData.status !== "resolved";
 
   if (wasResolved) {
-    console.log(`✅ SOS ${alertId} marked as resolved`);
+    console.log(`[SUCCESS] SOS ${alertId} marked as resolved`);
 
     try {
       const citizenId = afterData.userId;
       const dispatcherEmail = afterData.acceptedByEmail || "Dispatcher";
 
+      // Get dispatcher's name for notification
+      const dispatcherName = afterData.acceptedBy ? await getUserName(afterData.acceptedBy) : dispatcherEmail;
+      const dispatcherDisplay = formatUserDisplay(dispatcherName, dispatcherEmail);
+
       await sendNotificationToUser(
           citizenId,
-          "✅ Emergency Resolved",
-          `${dispatcherEmail} has marked your emergency as resolved`,
+          "[SUCCESS] Emergency Resolved",
+          `${dispatcherDisplay} has marked your emergency as resolved`,
           {
             type: "sos_resolved",
             alertId: alertId,
@@ -581,9 +694,21 @@ exports.onSOSResolved = onDocumentUpdated("emergency_alerts/{alertId}", async (e
           },
       );
 
-      console.log(`📲 Notified citizen ${citizenId} of resolution`);
+      console.log(`[DEVICE] Notified citizen ${citizenId} of resolution`);
+
+      // Notify emergency contact
+      const citizenName = await getUserName(afterData.userId);
+      const updateMessage = `SOS UPDATE: The emergency alert from ${citizenName || afterData.userEmail} has been RESOLVED.\n\nDispatcher: ${dispatcherDisplay}\n\nStatus: Emergency successfully handled - All clear!\n\nAlert ID: ${alertId}`;
+
+      await notifyEmergencyContact(
+          afterData.userId,
+          citizenName,
+          afterData.userEmail,
+          updateMessage,
+          "[RESOLVED] Emergency Completed",
+      );
     } catch (error) {
-      console.error("❌ Error in onSOSResolved:", error);
+      console.error("[ERROR] Error in onSOSResolved:", error);
     }
   }
 });
@@ -595,7 +720,7 @@ exports.onMessageSent = onDocumentCreated("emergency_alerts/{alertId}/messages/{
   const messageData = event.data.data();
   const alertId = event.params.alertId;
 
-  console.log(`💬 New message in alert ${alertId} from ${messageData.senderEmail} (role: ${messageData.senderRole})`);
+  console.log(`[MSG] New message in alert ${alertId} from ${messageData.senderEmail} (role: ${messageData.senderRole})`);
 
   try {
     // Get alert data to find the other party
@@ -605,14 +730,14 @@ exports.onMessageSent = onDocumentCreated("emergency_alerts/{alertId}/messages/{
         .get();
 
     if (!alertDoc.exists) {
-      console.log(`❌ Alert ${alertId} not found`);
+      console.log(`[ERROR] Alert ${alertId} not found`);
       return;
     }
 
     const alertData = alertDoc.data();
-    console.log(`📋 Alert status: ${alertData.status}`);
-    console.log(`👤 Citizen: ${alertData.userEmail} (ID: ${alertData.userId})`);
-    console.log(`👮 Dispatcher: ${alertData.acceptedByEmail || 'none'} (ID: ${alertData.acceptedBy || 'none'})`);
+    console.log(`[INFO] Alert status: ${alertData.status}`);
+    console.log(`[USER] Citizen: ${alertData.userEmail} (ID: ${alertData.userId})`);
+    console.log(`[DISPATCHER] Dispatcher: ${alertData.acceptedByEmail || 'none'} (ID: ${alertData.acceptedBy || 'none'})`);
 
     // Determine recipient based on sender role
     let recipientId;
@@ -622,31 +747,31 @@ exports.onMessageSent = onDocumentCreated("emergency_alerts/{alertId}/messages/{
       // Send to dispatcher
       recipientId = alertData.acceptedBy;
       recipientName = alertData.acceptedByEmail;
-      console.log(`📤 Sender is citizen, sending to dispatcher: ${recipientName}`);
+      console.log(`[SEND] Sender is citizen, sending to dispatcher: ${recipientName}`);
     } else {
       // Send to citizen
       recipientId = alertData.userId;
       recipientName = alertData.userEmail;
-      console.log(`📤 Sender is dispatcher, sending to citizen: ${recipientName}`);
+      console.log(`[SEND] Sender is dispatcher, sending to citizen: ${recipientName}`);
     }
 
     if (!recipientId) {
-      console.log("❌ No recipient found for message notification");
+      console.log("[ERROR] No recipient found for message notification");
       return;
     }
 
-    console.log(`🎯 Recipient ID: ${recipientId}`);
+    console.log(`[TARGET] Recipient ID: ${recipientId}`);
 
     // Prepare notification content
-    let title = `💬 Message from ${messageData.senderEmail}`;
+    let title = `[MSG] Message from ${messageData.senderEmail}`;
     let body;
 
     switch (messageData.messageType) {
       case "image":
-        body = "📷 Sent an image";
+        body = "[IMAGE] Sent an image";
         break;
       case "voice":
-        body = "🎤 Sent a voice message";
+        body = "[AUDIO] Sent a voice message";
         break;
       default:
         body = messageData.message || "Sent a message";
@@ -656,8 +781,8 @@ exports.onMessageSent = onDocumentCreated("emergency_alerts/{alertId}/messages/{
         }
     }
 
-    console.log(`📬 Notification title: ${title}`);
-    console.log(`📬 Notification body: ${body}`);
+    console.log(`[NOTIFICATION] Notification title: ${title}`);
+    console.log(`[NOTIFICATION] Notification body: ${body}`);
 
     await sendNotificationToUser(
         recipientId,
@@ -670,9 +795,9 @@ exports.onMessageSent = onDocumentCreated("emergency_alerts/{alertId}/messages/{
         },
     );
 
-    console.log(`✅ Notified ${recipientName} of new message`);
+    console.log(`[SUCCESS] Notified ${recipientName} of new message`);
   } catch (error) {
-    console.error("❌ Error in onMessageSent:", error);
+    console.error("[ERROR] Error in onMessageSent:", error);
   }
 });
 
@@ -684,28 +809,32 @@ exports.onCallCreated = onDocumentCreated("emergency_alerts/{alertId}/calls/{cal
   const alertId = event.params.alertId;
   const callId = event.params.callId;
 
-  console.log(`📞 New call created: ${callId} in alert ${alertId}`);
-  console.log(`📋 Status: ${callData.status}, Type: ${callData.type}`);
+  console.log(`[CALL] New call created: ${callId} in alert ${alertId}`);
+  console.log(`[INFO] Status: ${callData.status}, Type: ${callData.type}`);
 
   // Only send notification if call is ringing
   if (callData.status !== "ringing") {
-    console.log(`ℹ️ Call not ringing (status: ${callData.status}), skipping notification`);
+    console.log(`[INFO] Call not ringing (status: ${callData.status}), skipping notification`);
     return;
   }
 
   try {
     const receiverId = callData.receiverId;
     const callerName = callData.callerName || "Unknown";
+    const callerEmail = callData.callerEmail || "";
     const callType = callData.type === "video" ? "Video" : "Voice";
     const callerRole = callData.callerRole === "dispatcher" ? "Dispatcher" : "Citizen";
 
-    console.log(`📲 Sending incoming call notification to ${receiverId}`);
-    console.log(`📞 ${callType} call from ${callerName} (${callerRole})`);
+    // Format caller display as "Name (email)"
+    const callerDisplay = formatUserDisplay(callerName, callerEmail);
+
+    console.log(`[DEVICE] Sending incoming call notification to ${receiverId}`);
+    console.log(`[CALL] ${callType} call from ${callerDisplay}`);
 
     await sendNotificationToUser(
         receiverId,
-        `📞 Incoming ${callType} Call`,
-        `${callerName} (${callerRole}) is calling you`,
+        `[CALL] Incoming ${callType} Call`,
+        `Incoming call from ${callerDisplay}`,
         {
           type: "incoming_call",
           alertId: alertId,
@@ -718,9 +847,9 @@ exports.onCallCreated = onDocumentCreated("emergency_alerts/{alertId}/calls/{cal
         },
     );
 
-    console.log(`✅ Sent incoming call notification to ${receiverId}`);
+    console.log(`[SUCCESS] Sent incoming call notification to ${receiverId}`);
   } catch (error) {
-    console.error("❌ Error in onCallCreated:", error);
+    console.error("[ERROR] Error in onCallCreated:", error);
   }
 });
 
@@ -736,7 +865,7 @@ exports.generateLiveKitToken = onCall(async (request) => {
       throw new Error("User must be authenticated");
     }
 
-    console.log(`🎥 Generating LiveKit token for user ${userId}`);
+    console.log(`[VIDEO] Generating LiveKit token for user ${userId}`);
 
     const {alertId, callId, roomName} = request.data;
 
@@ -745,7 +874,7 @@ exports.generateLiveKitToken = onCall(async (request) => {
       throw new Error("Missing required parameters: alertId, callId, roomName");
     }
 
-    console.log(`📋 Alert ID: ${alertId}, Call ID: ${callId}, Room: ${roomName}`);
+    console.log(`[INFO] Alert ID: ${alertId}, Call ID: ${callId}, Room: ${roomName}`);
 
     // Verify user is authorized (part of the alert)
     const alertDoc = await admin.firestore()
@@ -763,7 +892,7 @@ exports.generateLiveKitToken = onCall(async (request) => {
       userId === alertData.acceptedBy; // Dispatcher
 
     if (!isAuthorized) {
-      console.error(`❌ User ${userId} not authorized for alert ${alertId}`);
+      console.error(`[ERROR] User ${userId} not authorized for alert ${alertId}`);
       throw new Error("User not authorized for this alert");
     }
 
@@ -783,11 +912,11 @@ exports.generateLiveKitToken = onCall(async (request) => {
 
     // Verify user is participant in the call
     if (userId !== callData.callerId && userId !== callData.receiverId) {
-      console.error(`❌ User ${userId} not participant in call ${callId}`);
+      console.error(`[ERROR] User ${userId} not participant in call ${callId}`);
       throw new Error("User not a participant in this call");
     }
 
-    console.log(`✅ User authorized for call`);
+    console.log(`[SUCCESS] User authorized for call`);
 
     // Generate LiveKit access token
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
@@ -806,14 +935,451 @@ exports.generateLiveKitToken = onCall(async (request) => {
 
     const token = await at.toJwt();
 
-    console.log(`✅ Generated token for ${userId} in room ${roomName}`);
+    console.log(`[SUCCESS] Generated token for ${userId} in room ${roomName}`);
 
     return {
       token: token,
       serverUrl: "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud",
     };
   } catch (error) {
-    console.error("❌ Error generating LiveKit token:", error);
+    console.error("[ERROR] Error generating LiveKit token:", error);
     throw new Error(`Failed to generate token: ${error.message}`);
   }
 });
+
+/**
+ * Send SMS notification to emergency contact when SOS alert is created.
+ * Requires Twilio configuration via Firebase environment variables.
+ *
+ * Configuration:
+ *   firebase functions:config:set twilio.account_sid="YOUR_SID"
+ *   firebase functions:config:set twilio.auth_token="YOUR_TOKEN"
+ *   firebase functions:config:set twilio.phone_number="+1234567890"
+ */
+exports.sendEmergencyContactSMS = onDocumentCreated(
+    "emergency_alerts/{alertId}",
+    async (event) => {
+      const alertData = event.data.data();
+      const alertId = event.params.alertId;
+      const userId = alertData.userId;
+      const userEmail = alertData.userEmail;
+
+      console.log(`[SMS] [SMS] New SOS alert created: ${alertId} by ${userEmail}`);
+
+      try {
+        // Check if Twilio is configured
+        const functions = require("firebase-functions");
+        const twilioConfig = functions.config().twilio;
+
+        if (!twilioConfig || !twilioConfig.account_sid || !twilioConfig.auth_token || !twilioConfig.phone_number) {
+          console.warn("[WARN] [SMS] Twilio not configured. Skipping SMS notification.");
+          console.warn("[WARN] [SMS] To enable SMS, run:");
+          console.warn('[WARN] [SMS]   firebase functions:config:set twilio.account_sid="YOUR_SID"');
+          console.warn('[WARN] [SMS]   firebase functions:config:set twilio.auth_token="YOUR_TOKEN"');
+          console.warn('[WARN] [SMS]   firebase functions:config:set twilio.phone_number="+1234567890"');
+          return null;
+        }
+
+        const accountSid = twilioConfig.account_sid;
+        const authToken = twilioConfig.auth_token;
+        const fromPhoneNumber = twilioConfig.phone_number;
+
+        // Initialize Twilio client
+        const twilio = require("twilio");
+        const twilioClient = twilio(accountSid, authToken);
+
+        // Get user's medical info with emergency contact
+        const medicalInfoDoc = await admin.firestore()
+            .collection("users")
+            .doc(userId)
+            .collection("medical_info")
+            .doc("data")
+            .get();
+
+        if (!medicalInfoDoc.exists) {
+          console.log(`[INFO] [SMS] No medical info found for user: ${userId}`);
+          return null;
+        }
+
+        const medicalInfoData = medicalInfoDoc.data();
+        const emergencyContactPhone = medicalInfoData.emergencyContactPhone;
+
+        if (!emergencyContactPhone || emergencyContactPhone === "") {
+          console.log(`[INFO] [SMS] No emergency contact phone for user: ${userId}`);
+          return null;
+        }
+
+        // Get alert location
+        const location = alertData.location;
+        const lat = location.latitude;
+        const lng = location.longitude;
+        const googleMapsLink = `https://maps.google.com/?q=${lat},${lng}`;
+
+        // Compose SMS message
+        const message = `[ALERT] EMERGENCY ALERT
+${userEmail} has triggered an SOS alert!
+
+Location: ${googleMapsLink}
+
+This is an automated message from Lighthouse Emergency Response System.`;
+
+        console.log(`[SMS] [SMS] Sending to: ${emergencyContactPhone}`);
+
+        // Send SMS
+        try {
+          const result = await twilioClient.messages.create({
+            body: message,
+            from: fromPhoneNumber,
+            to: emergencyContactPhone, // Must be in E.164 format: +60123456789
+          });
+
+          console.log(`[SUCCESS] [SMS] Sent successfully! SID: ${result.sid}`);
+          return {success: true, sid: result.sid};
+        } catch (smsError) {
+          console.error(`[ERROR] [SMS] Failed to send:`, smsError);
+
+          // Log specific Twilio errors
+          if (smsError.code) {
+            console.error(`[ERROR] [SMS] Twilio error code: ${smsError.code}`);
+          }
+          if (smsError.message) {
+            console.error(`[ERROR] [SMS] Error message: ${smsError.message}`);
+          }
+
+          return {success: false, error: smsError.message};
+        }
+      } catch (error) {
+        console.error("[ERROR] [SMS] Error processing emergency contact SMS:", error);
+        return {success: false, error: error.message};
+      }
+    },
+);
+
+/**
+ * HTTP Function to delete all facilities
+ * Call with: https://us-central1-lighthouse-2498c.cloudfunctions.net/deleteAllFacilities
+ */
+exports.deleteAllFacilities = onRequest(async (request, response) => {
+  cors(request, response, async () => {
+    try {
+      console.log("[DELETE_FACILITIES] Starting to delete all facilities...");
+
+      const snapshot = await admin.firestore().collection("facilities").get();
+
+      if (snapshot.empty) {
+        console.log("[DELETE_FACILITIES] No facilities found");
+        response.json({success: true, deleted: 0, message: "No facilities to delete"});
+        return;
+      }
+
+      const batch = admin.firestore().batch();
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      await batch.commit();
+
+      console.log(`[DELETE_FACILITIES] Successfully deleted ${snapshot.docs.length} facilities`);
+      response.json({
+        success: true,
+        deleted: snapshot.docs.length,
+        message: `Successfully deleted ${snapshot.docs.length} facilities`,
+      });
+    } catch (error) {
+      console.error("[DELETE_FACILITIES] Error:", error);
+      response.status(500).json({success: false, error: error.message});
+    }
+  });
+});
+
+/**
+ * Callable Function to send email using Resend
+ * Supports both plain text and HTML emails
+ *
+ * Setup instructions:
+ * 1. Sign up at https://resend.com and get API key
+ * 2. Set environment variable: firebase functions:config:set resend.api_key="re_xxxxx"
+ * 3. Verify your domain in Resend dashboard (or use onboarding@resend.dev for testing)
+ * 4. Deploy: firebase deploy --only functions
+ */
+exports.sendEmail = onCall(async (request) => {
+  try {
+    const {to, subject, text, html} = request.data;
+
+    console.log("[SEND_EMAIL] Sending email to:", to);
+
+    // Get Resend API key from Firebase parameters
+    const apiKey = resendApiKey.value();
+
+    if (!apiKey) {
+      console.error("[SEND_EMAIL] Resend API key not configured");
+      throw new Error(
+          "Email service not configured. Please set RESEND_API_KEY parameter.",
+      );
+    }
+
+    // Initialize Resend client
+    const resend = new Resend(apiKey);
+
+    // Send email using Resend with verified domain
+    const result = await resend.emails.send({
+      from: "Lighthouse Emergency <noreply@info.lighthouseapp.tech>",
+      to: to,
+      subject: subject,
+      text: text,
+      html: html || text,
+    });
+
+    console.log("[SEND_EMAIL] Email sent successfully:", result.data?.id);
+    return {success: true, messageId: result.data?.id};
+  } catch (error) {
+    console.error("[SEND_EMAIL] Error sending email:", error);
+    throw new Error(`Failed to send email: ${error.message}`);
+  }
+});
+
+/**
+ * Alternative: Gmail-based email function (kept for reference)
+ * To use Gmail instead, uncomment this and comment out the Resend version above
+ */
+// exports.sendEmailGmail = onCall(async (request) => {
+//   try {
+//     const {to, subject, text, html} = request.data;
+//     const emailUser = process.env.EMAIL_USER;
+//     const emailPassword = process.env.EMAIL_PASSWORD;
+//
+//     if (!emailUser || !emailPassword) {
+//       throw new Error("Gmail credentials not configured");
+//     }
+//
+//     const transporter = nodemailer.createTransport({
+//       service: "gmail",
+//       auth: {user: emailUser, pass: emailPassword},
+//     });
+//
+//     const result = await transporter.sendMail({
+//       from: `"Lighthouse Emergency" <${emailUser}>`,
+//       to: to,
+//       subject: subject,
+//       text: text,
+//       html: html || text,
+//     });
+//
+//     return {success: true, messageId: result.messageId};
+//   } catch (error) {
+//     throw new Error(`Failed to send email: ${error.message}`);
+//   }
+// });
+
+/**
+ * Callable Function to send SMS
+ * Uses Twilio for SMS delivery
+ */
+exports.sendSMS = onCall(async (request) => {
+  try {
+    const {to, message} = request.data;
+
+    console.log("[SEND_SMS] Sending SMS to:", to);
+
+    // Get Twilio credentials from Firebase parameters
+    const accountSid = twilioAccountSid.value();
+    const authToken = twilioAuthToken.value();
+    const twilioNumber = twilioPhoneNumber.value();
+
+    if (!accountSid || !authToken || !twilioNumber) {
+      console.error("[SEND_SMS] Twilio credentials not configured");
+      throw new Error("Twilio credentials not configured. Please set TWILIO_* parameters.");
+    }
+
+    const twilio = require("twilio");
+    const twilioClient = twilio(accountSid, authToken);
+
+    const result = await twilioClient.messages.create({
+      body: message,
+      from: twilioNumber,
+      to: to,
+    });
+
+    console.log("[SEND_SMS] SMS sent successfully:", result.sid);
+    return {success: true, messageSid: result.sid};
+  } catch (error) {
+    console.error("[SEND_SMS] Error sending SMS:", error);
+    throw new Error(`Failed to send SMS: ${error.message}`);
+  }
+});
+
+/**
+ * Helper function: Get emergency contact from user's medical info
+ * Returns null if no emergency contact is configured
+ */
+async function getEmergencyContact(userId) {
+  console.log(`[EMERGENCY_CONTACT] ===== START getEmergencyContact for user: ${userId} =====`);
+  try {
+    const medicalInfoSnapshot = await admin.firestore()
+        .collection("users")
+        .doc(userId)
+        .collection("medical_info")
+        .doc("data")
+        .get();
+
+    console.log(`[EMERGENCY_CONTACT] Medical info snapshot exists: ${medicalInfoSnapshot.exists}`);
+
+    if (!medicalInfoSnapshot.exists) {
+      console.log(`[EMERGENCY_CONTACT] No medical info document found for user ${userId}`);
+      return null;
+    }
+
+    const medicalData = medicalInfoSnapshot.data();
+    console.log(`[EMERGENCY_CONTACT] Medical data keys: ${Object.keys(medicalData).join(", ")}`);
+    console.log(`[EMERGENCY_CONTACT] Has encryptedData: ${!!medicalData.encryptedData}`);
+    console.log(`[EMERGENCY_CONTACT] Has IV: ${!!medicalData.iv}`);
+
+    // Medical info is encrypted, need to decrypt
+    if (medicalData.encryptedData && medicalData.iv) {
+      try {
+        console.log(`[EMERGENCY_CONTACT] Starting decryption process...`);
+        const crypto = require("crypto");
+
+        // Decrypt the medical info
+        const encryptedData = medicalData.encryptedData;
+        const iv = Buffer.from(medicalData.iv, "base64");
+        console.log(`[EMERGENCY_CONTACT] IV length: ${iv.length} bytes`);
+
+        // Derive key from user UID using SHA-256 (same as Flutter app)
+        const keyHash = crypto.createHash("sha256").update(userId).digest();
+        const encryptionKey = Buffer.from(keyHash);
+        console.log(`[EMERGENCY_CONTACT] Encryption key derived, length: ${encryptionKey.length} bytes`);
+
+        const decipher = crypto.createDecipheriv("aes-256-cbc", encryptionKey, iv);
+        let decrypted = decipher.update(encryptedData, "base64", "utf8");
+        decrypted += decipher.final("utf8");
+        console.log(`[EMERGENCY_CONTACT] Decryption successful, decrypted length: ${decrypted.length} chars`);
+
+        const medicalInfo = JSON.parse(decrypted);
+        console.log(`[EMERGENCY_CONTACT] Parsed JSON successfully`);
+        console.log(`[EMERGENCY_CONTACT] Medical info keys: ${Object.keys(medicalInfo).join(", ")}`);
+        console.log(`[EMERGENCY_CONTACT] Has emergencyContact field: ${!!medicalInfo.emergencyContact}`);
+
+        if (medicalInfo.emergencyContact) {
+          const ec = medicalInfo.emergencyContact;
+          console.log(`[EMERGENCY_CONTACT] Emergency contact details - name: ${!!ec.name}, phone: ${!!ec.phone}, email: ${!!ec.email}`);
+          console.log(`[EMERGENCY_CONTACT] Found emergency contact for user ${userId}: ${ec.name || "no name"}`);
+          return medicalInfo.emergencyContact;
+        } else {
+          console.log(`[EMERGENCY_CONTACT] No emergencyContact field in medical info`);
+        }
+      } catch (decryptError) {
+        console.error("[EMERGENCY_CONTACT] Error decrypting medical info:", decryptError);
+        console.error("[EMERGENCY_CONTACT] Decryption error stack:", decryptError.stack);
+        // Continue to return null if decryption fails
+      }
+    } else {
+      console.log(`[EMERGENCY_CONTACT] Medical data missing encryption fields - encryptedData: ${!!medicalData.encryptedData}, iv: ${!!medicalData.iv}`);
+    }
+
+    console.log(`[EMERGENCY_CONTACT] Returning null - no emergency contact found`);
+    return null;
+  } catch (error) {
+    console.error("[EMERGENCY_CONTACT] Error getting emergency contact:", error);
+    console.error("[EMERGENCY_CONTACT] Error stack:", error.stack);
+    return null;
+  } finally {
+    console.log(`[EMERGENCY_CONTACT] ===== END getEmergencyContact for user: ${userId} =====`);
+  }
+}
+
+/**
+ * Helper function: Send notification to emergency contact
+ * Tries SMS first (if phone available), then email (if email available)
+ */
+async function notifyEmergencyContact(userId, userName, userEmail, message, subject = "Emergency Alert") {
+  console.log(`[EMERGENCY_CONTACT] ===== START notifyEmergencyContact =====`);
+  console.log(`[EMERGENCY_CONTACT] userId: ${userId}, userName: ${userName}, userEmail: ${userEmail}`);
+  console.log(`[EMERGENCY_CONTACT] subject: ${subject}`);
+  console.log(`[EMERGENCY_CONTACT] message preview: ${message.substring(0, 100)}...`);
+
+  try {
+    const emergencyContact = await getEmergencyContact(userId);
+
+    if (!emergencyContact) {
+      console.log(`[EMERGENCY_CONTACT] No emergency contact configured for user ${userId}`);
+      console.log(`[EMERGENCY_CONTACT] ===== END notifyEmergencyContact (no contact) =====`);
+      return;
+    }
+
+    const {name, phone, email} = emergencyContact;
+    console.log(`[EMERGENCY_CONTACT] Retrieved contact - name: ${name}, hasPhone: ${!!phone}, hasEmail: ${!!email}`);
+
+    if (!name || (!phone && !email)) {
+      console.log(`[EMERGENCY_CONTACT] Emergency contact incomplete: name=${name}, phone=${phone}, email=${email}`);
+      console.log(`[EMERGENCY_CONTACT] ===== END notifyEmergencyContact (incomplete) =====`);
+      return;
+    }
+
+    // Try SMS first if phone is available
+    if (phone && phone.trim() !== "") {
+      try {
+        console.log(`[EMERGENCY_CONTACT] Attempting SMS to ${name} at ${phone}`);
+
+        const twilio = require("twilio");
+        const accountSid = twilioAccountSid.value();
+        const authToken = twilioAuthToken.value();
+        const twilioNumber = twilioPhoneNumber.value();
+
+        console.log(`[EMERGENCY_CONTACT] Twilio credentials loaded, from: ${twilioNumber}`);
+        const twilioClient = twilio(accountSid, authToken);
+
+        const smsResult = await twilioClient.messages.create({
+          body: message,
+          from: twilioNumber,
+          to: phone,
+        });
+
+        console.log(`[EMERGENCY_CONTACT] SMS sent successfully to ${name}, SID: ${smsResult.sid}`);
+        console.log(`[EMERGENCY_CONTACT] ===== END notifyEmergencyContact (SMS success) =====`);
+        return; // Successfully sent via SMS, no need to try email
+      } catch (smsError) {
+        console.error("[EMERGENCY_CONTACT] Failed to send SMS:", smsError);
+        console.error("[EMERGENCY_CONTACT] SMS error details:", smsError.message);
+        // Continue to try email if SMS fails
+      }
+    } else {
+      console.log(`[EMERGENCY_CONTACT] No phone number available, skipping SMS`);
+    }
+
+    // Try email if phone is unavailable or SMS failed
+    if (email && email.trim() !== "") {
+      try {
+        console.log(`[EMERGENCY_CONTACT] Attempting email to ${name} at ${email}`);
+
+        const {Resend} = require("resend");
+        const apiKey = resendApiKey.value();
+        const resend = new Resend(apiKey);
+
+        console.log(`[EMERGENCY_CONTACT] Resend client initialized`);
+
+        const emailResult = await resend.emails.send({
+          from: "Lighthouse Emergency <noreply@info.lighthouseapp.tech>",
+          to: email,
+          subject: subject,
+          text: message,
+          html: `<p>${message.replace(/\n/g, "<br>")}</p>`,
+        });
+
+        console.log(`[EMERGENCY_CONTACT] Email sent successfully to ${name}, ID: ${emailResult.id}`);
+        console.log(`[EMERGENCY_CONTACT] ===== END notifyEmergencyContact (email success) =====`);
+      } catch (emailError) {
+        console.error("[EMERGENCY_CONTACT] Failed to send email:", emailError);
+        console.error("[EMERGENCY_CONTACT] Email error details:", emailError.message);
+        console.log(`[EMERGENCY_CONTACT] ===== END notifyEmergencyContact (email failed) =====`);
+      }
+    } else {
+      console.log(`[EMERGENCY_CONTACT] No email available, skipping email`);
+      console.log(`[EMERGENCY_CONTACT] ===== END notifyEmergencyContact (no contact method) =====`);
+    }
+  } catch (error) {
+    console.error("[EMERGENCY_CONTACT] Error in notifyEmergencyContact:", error);
+    console.error("[EMERGENCY_CONTACT] Error stack:", error.stack);
+    console.log(`[EMERGENCY_CONTACT] ===== END notifyEmergencyContact (error) =====`);
+  }
+}

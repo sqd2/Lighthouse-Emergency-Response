@@ -99,6 +99,7 @@ class LiveKitService extends ChangeNotifier {
 
       final userData = userDoc.data();
       final callerName = userData?['name'] ?? user.email ?? 'Unknown';
+      final callerEmail = userData?['email'] ?? user.email ?? 'Unknown';
       final callerRole = userData?['role'] ?? 'citizen';
 
       // Generate unique room name
@@ -114,6 +115,7 @@ class LiveKitService extends ChangeNotifier {
         'callerId': user.uid,
         'receiverId': receiverId,
         'callerName': callerName,
+        'callerEmail': callerEmail,
         'callerRole': callerRole,
         'type': type,
         'status': Call.STATUS_RINGING,
@@ -506,9 +508,9 @@ class LiveKitService extends ChangeNotifier {
       _isSpeakerOn = true;
 
       notifyListeners();
-      debugPrint('[LiveKitService] ✅ Room disconnect complete - camera/mic released');
+      debugPrint('[LiveKitService]  Room disconnect complete - camera/mic released');
     } catch (e) {
-      debugPrint('[LiveKitService] ❌ Fatal error during disconnect: $e');
+      debugPrint('[LiveKitService] [ERROR] Fatal error during disconnect: $e');
       // Force cleanup even if error
       _room = null;
       _localVideoTrack = null;

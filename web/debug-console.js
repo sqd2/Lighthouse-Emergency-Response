@@ -40,7 +40,7 @@
 
   // Create copy button
   const copyBtn = document.createElement('button');
-  copyBtn.textContent = '📋 Copy Logs';
+  copyBtn.textContent = ' Copy Logs';
   copyBtn.style.cssText = `
     position: fixed;
     top: 10px;
@@ -56,25 +56,59 @@
     color: black;
   `;
 
+  // Create clear cache button
+  const clearCacheBtn = document.createElement('button');
+  clearCacheBtn.textContent = ' Clear Cache';
+  clearCacheBtn.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 140px;
+    padding: 10px 20px;
+    background: rgba(255, 165, 0, 0.8);
+    border: 2px solid #ff9900;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 1000001;
+    cursor: pointer;
+    color: black;
+  `;
+
   // Store raw log text
   window.debugLogs = [];
 
   copyBtn.onclick = function() {
     const logText = window.debugLogs.join('\n');
     navigator.clipboard.writeText(logText).then(() => {
-      copyBtn.textContent = '✅ Copied!';
+      copyBtn.textContent = ' Copied!';
       copyBtn.style.background = 'rgba(0, 255, 0, 1)';
       setTimeout(() => {
-        copyBtn.textContent = '📋 Copy Logs';
+        copyBtn.textContent = ' Copy Logs';
         copyBtn.style.background = 'rgba(0, 255, 0, 0.8)';
       }, 2000);
     }).catch(err => {
       console.error('Failed to copy:', err);
-      copyBtn.textContent = '❌ Failed';
+      copyBtn.textContent = '[ERROR] Failed';
       setTimeout(() => {
-        copyBtn.textContent = '📋 Copy Logs';
+        copyBtn.textContent = ' Copy Logs';
       }, 2000);
     });
+  };
+
+  clearCacheBtn.onclick = function() {
+    if (confirm('This will clear all caches and reload the app. Continue?')) {
+      clearCacheBtn.textContent = ' Clearing...';
+      clearCacheBtn.style.background = 'rgba(255, 0, 0, 0.8)';
+
+      if (typeof window.clearAllCachesAndReload === 'function') {
+        window.clearAllCachesAndReload();
+      } else {
+        // Fallback if function not available
+        sessionStorage.clear();
+        localStorage.clear();
+        window.location.reload(true);
+      }
+    }
   };
 
   // Create toggle button - STARTS HIDDEN, only shows when debug mode is enabled
@@ -101,6 +135,7 @@
     isVisible = !isVisible;
     consoleDiv.style.display = isVisible ? 'block' : 'none';
     copyBtn.style.display = isVisible ? 'block' : 'none';
+    clearCacheBtn.style.display = isVisible ? 'block' : 'none';
     toggleBtn.style.background = isVisible ? 'rgba(255, 0, 0, 0.8)' : 'rgba(0, 255, 0, 0.8)';
     if (isVisible) {
       // Select all text when opened to make it easy to copy
@@ -121,8 +156,10 @@
       document.body.appendChild(consoleDiv);
       document.body.appendChild(toggleBtn);
       document.body.appendChild(copyBtn);
+      document.body.appendChild(clearCacheBtn);
       copyBtn.style.display = 'none'; // Hidden by default
-      console.log('[DEBUG-CONSOLE] Debug button added to page');
+      clearCacheBtn.style.display = 'none'; // Hidden by default
+      console.log('[DEBUG-CONSOLE] Debug button added to page (with clear cache button)');
 
       // Start checking debug mode after adding button
       checkDebugMode();
@@ -144,7 +181,7 @@
 
     // Give up after max attempts
     if (firebaseCheckAttempts > MAX_FIREBASE_CHECK_ATTEMPTS) {
-      console.error('[DEBUG-CONSOLE] ❌ Firebase not available after 10 seconds');
+      console.error('[DEBUG-CONSOLE] [ERROR] Firebase not available after 10 seconds');
       console.error('[DEBUG-CONSOLE] Firebase object:', typeof firebase);
       console.error('[DEBUG-CONSOLE] firebase.auth:', typeof firebase?.auth);
       console.error('[DEBUG-CONSOLE] firebase.firestore:', typeof firebase?.firestore);
@@ -158,12 +195,12 @@
       return;
     }
 
-    console.log('[DEBUG-CONSOLE] ✅ Firebase ready, setting up auth listener');
+    console.log('[DEBUG-CONSOLE]  Firebase ready, setting up auth listener');
 
     // Listen for auth state changes
     firebase.auth().onAuthStateChanged(function(user) {
       if (user) {
-        console.log('[DEBUG-CONSOLE] ✅ User authenticated:', user.uid);
+        console.log('[DEBUG-CONSOLE]  User authenticated:', user.uid);
         console.log('[DEBUG-CONSOLE] 👀 Watching debugMode field in Firestore...');
 
         // User is signed in, check debug mode
@@ -175,14 +212,14 @@
               const data = doc.data();
               const debugMode = data.debugMode || false;
 
-              console.log('[DEBUG-CONSOLE] 📊 Full user data:', data);
+              console.log('[DEBUG-CONSOLE]  Full user data:', data);
               console.log('[DEBUG-CONSOLE] 🐛 debugMode value:', debugMode);
               console.log('[DEBUG-CONSOLE] 🔄 Setting button display to:', debugMode ? 'VISIBLE (block)' : 'HIDDEN (none)');
 
               // Show or hide button based on debug mode
               toggleBtn.style.display = debugMode ? 'block' : 'none';
 
-              console.log('[DEBUG-CONSOLE] ✅ Button display updated');
+              console.log('[DEBUG-CONSOLE]  Button display updated');
 
               if (!debugMode && isVisible) {
                 // Hide console if debug mode is turned off while console is visible
@@ -192,15 +229,15 @@
                 console.log('[DEBUG-CONSOLE] 🚫 Closed debug console (debug mode disabled)');
               }
             } else {
-              console.log('[DEBUG-CONSOLE] ⚠️ User document does not exist');
+              console.log('[DEBUG-CONSOLE] [WARN] User document does not exist');
               toggleBtn.style.display = 'none';
             }
           }, function(error) {
-            console.error('[DEBUG-CONSOLE] ❌ Error listening to user doc:', error);
+            console.error('[DEBUG-CONSOLE] [ERROR] Error listening to user doc:', error);
             toggleBtn.style.display = 'none';
           });
       } else {
-        console.log('[DEBUG-CONSOLE] ⚠️ No user signed in');
+        console.log('[DEBUG-CONSOLE] [WARN] No user signed in');
         toggleBtn.style.display = 'none';
       }
     });
@@ -260,5 +297,5 @@
     addLog('info', arguments);
   };
 
-  console.log('✅ Debug console initialized - tap 🐛 button to toggle');
+  console.log(' Debug console initialized - tap 🐛 button to toggle');
 })();

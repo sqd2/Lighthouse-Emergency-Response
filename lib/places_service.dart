@@ -95,7 +95,7 @@ class PlacesService {
     }
 
     final duration = DateTime.now().difference(startTime);
-    print('[PLACES] ✅ Fetched ${facilities.length} facilities in ${duration.inMilliseconds}ms');
+    print('[PLACES]  Fetched ${facilities.length} facilities in ${duration.inMilliseconds}ms');
 
     return facilities;
   }

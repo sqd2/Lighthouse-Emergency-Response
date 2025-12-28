@@ -7,12 +7,16 @@ class FacilityDetailsSheet extends StatelessWidget {
   final FacilityPin facility;
   final Position? userLocation;
   final VoidCallback? onNavigate;
+  final VoidCallback? onDelete;
+  final bool canDelete;
 
   const FacilityDetailsSheet({
     super.key,
     required this.facility,
     this.userLocation,
     this.onNavigate,
+    this.onDelete,
+    this.canDelete = false,
   });
 
   String _niceType(String t) {
@@ -138,6 +142,61 @@ class FacilityDetailsSheet extends StatelessWidget {
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+
+              // Delete button (only shown for facilities the user can delete)
+              if (canDelete && onDelete != null)
+                Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          // Show confirmation dialog
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Delete Facility'),
+                              content: Text(
+                                'Are you sure you want to delete "${facility.name}"? This action cannot be undone.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                  ),
+                                  child: const Text(
+                                    'Delete',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirm == true) {
+                            Navigator.pop(context); // Close the facility details sheet
+                            onDelete!();
+                          }
+                        },
+                        icon: const Icon(Icons.delete, color: Colors.white),
+                        label: const Text(
+                          'Delete Facility',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),

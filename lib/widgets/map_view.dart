@@ -43,6 +43,9 @@ class MapView extends StatefulWidget {
     this.dispatcherName,
     this.debugMode = false,
     this.disableMarkerTaps = false,
+    this.selectedFacilityTypes,
+    this.showAllFacilities = true,
+    this.highlightedFacilityId,
   });
 
   /// When true, a tap places a temporary pin and calls [onMapTap].
@@ -82,6 +85,15 @@ class MapView extends StatefulWidget {
   /// When true, disables marker onTap to prevent click-through from overlays
   final bool disableMarkerTaps;
 
+  /// Selected facility types for filtering (null = show all types)
+  final Set<String>? selectedFacilityTypes;
+
+  /// When false, hides all facilities regardless of type selection
+  final bool showAllFacilities;
+
+  /// Facility ID to highlight/center on (for search results)
+  final String? highlightedFacilityId;
+
   @override
   State<MapView> createState() => _MapViewState();
 }
@@ -92,6 +104,7 @@ class _MapViewState extends State<MapView> {
   // Subscriptions
   StreamSubscription<geo.Position>? _positionStream;
   Timer? _interpolationTimer;
+  Timer? _markerUpdateDebounce;
 
   // Markers and tracking
   final Map<String, Marker> _markers = {};
@@ -111,6 +124,9 @@ class _MapViewState extends State<MapView> {
   LatLng? _targetPosition;
   DateTime? _interpolationStartTime;
   static const _interpolationDuration = Duration(milliseconds: 800);
+
+  // Debouncing for marker updates to prevent excessive redraws
+  static const _markerUpdateDebounceTime = Duration(milliseconds: 100);
 
   // Convenience getters
   List<FacilityPin> get _facilities =>
@@ -326,6 +342,18 @@ class _MapViewState extends State<MapView> {
           _recenterOnUserLocationInternal;
     }
 
+    // Center on highlighted facility if it changed
+    if (widget.highlightedFacilityId != oldWidget.highlightedFacilityId &&
+        widget.highlightedFacilityId != null) {
+      _centerOnHighlightedFacility();
+    }
+
+    // Update markers if filter changed
+    if (widget.selectedFacilityTypes != oldWidget.selectedFacilityTypes ||
+        widget.showAllFacilities != oldWidget.showAllFacilities) {
+      _updateMarkers();
+    }
+
     // Check for dispatcher location changes
     final dispatcherChanged = oldWidget.dispatcherLocation != widget.dispatcherLocation;
     if (dispatcherChanged) {
@@ -347,6 +375,7 @@ class _MapViewState extends State<MapView> {
   void dispose() {
     _positionStream?.cancel();
     _interpolationTimer?.cancel();
+    _markerUpdateDebounce?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
@@ -354,7 +383,7 @@ class _MapViewState extends State<MapView> {
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     _applyMapStyle();
-    _updateMarkers();
+    _updateMarkers(immediate: true);
   }
 
   /// Apply custom map style to hide non-emergency POI labels
@@ -389,7 +418,7 @@ class _MapViewState extends State<MapView> {
       setState(() {
         _tempPinPosition = position;
       });
-      _updateMarkers();
+      _updateMarkers(immediate: true);
       widget.onMapTap?.call(position.longitude, position.latitude);
     }
   }
@@ -398,7 +427,7 @@ class _MapViewState extends State<MapView> {
     setState(() {
       _tempPinPosition = null;
     });
-    _updateMarkers();
+    _updateMarkers(immediate: true);
   }
 
   void _recenterOnUserLocationInternal() {
@@ -498,21 +527,44 @@ class _MapViewState extends State<MapView> {
     );
 
     if (mounted) {
-      setState(() {
-        _userPosition = newPosition;
-        _currentDisplayPosition = newPosition;
-      });
+      _userPosition = newPosition;
+      _currentDisplayPosition = newPosition;
+
+      // Only update user marker, not all markers
+      if (_userLocationIcon != null) {
+        _updateUserMarkerOnly(newPosition);
+      }
     }
 
     // Only animate camera if followUserLocation is enabled
     if (widget.followUserLocation) {
       _mapController?.animateCamera(CameraUpdate.newLatLng(newPosition));
     }
-    _updateMarkers();
 
     if (progress >= 1.0) {
       _interpolationTimer?.cancel();
       _interpolationTimer = null;
+      // Full marker update when interpolation completes
+      _updateMarkers();
+    }
+  }
+
+  /// Efficiently update only the user marker position (for interpolation)
+  void _updateUserMarkerOnly(LatLng position) {
+    if (!mounted || _userLocationIcon == null) return;
+
+    try {
+      setState(() {
+        _markers['user'] = Marker(
+          markerId: const MarkerId('user'),
+          position: position,
+          icon: _userLocationIcon!,
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 100,
+        );
+      });
+    } catch (e) {
+      // Silently fail - next update will correct it
     }
   }
 
@@ -549,8 +601,27 @@ class _MapViewState extends State<MapView> {
     );
   }
 
-  /// Update all markers on the map
-  void _updateMarkers() {
+  /// Schedule a debounced marker update to prevent excessive redraws
+  void _scheduleMarkerUpdate() {
+    _markerUpdateDebounce?.cancel();
+    _markerUpdateDebounce = Timer(_markerUpdateDebounceTime, () {
+      if (mounted) {
+        _updateMarkersImmediate();
+      }
+    });
+  }
+
+  /// Update markers - uses debouncing by default for performance
+  void _updateMarkers({bool immediate = false}) {
+    if (immediate) {
+      _updateMarkersImmediate();
+    } else {
+      _scheduleMarkerUpdate();
+    }
+  }
+
+  /// Update all markers on the map (immediate version)
+  void _updateMarkersImmediate() {
     if (!mounted) return; // Safety check
 
     final markers = <String, Marker>{};
@@ -566,31 +637,40 @@ class _MapViewState extends State<MapView> {
       );
     }
 
-    // Facility markers (always show)
-    for (final facility in _facilities) {
-      BitmapDescriptor icon;
-      if (kIsWeb) {
-        // Use custom markers on web
-        final type = facility.type.toLowerCase().trim();
-        icon =
-            _facilityIcons[type] ??
-            _facilityIcons['default'] ??
-            BitmapDescriptor.defaultMarker;
-      } else {
-        // Use hue-based markers on native
-        icon = BitmapDescriptor.defaultMarkerWithHue(
-          _hueForType(facility.type),
+    // Facility markers (filtered by type and showAllFacilities)
+    if (widget.showAllFacilities) {
+      final selectedTypes = widget.selectedFacilityTypes ??
+          {'hospital', 'clinic', 'police station', 'fire station'};
+
+      for (final facility in _facilities) {
+        final facilityType = facility.type.toLowerCase().trim();
+
+        // Only show if this facility type is selected
+        if (!selectedTypes.contains(facilityType)) continue;
+
+        BitmapDescriptor icon;
+        if (kIsWeb) {
+          // Use custom markers on web
+          icon =
+              _facilityIcons[facilityType] ??
+              _facilityIcons['default'] ??
+              BitmapDescriptor.defaultMarker;
+        } else {
+          // Use hue-based markers on native
+          icon = BitmapDescriptor.defaultMarkerWithHue(
+            _hueForType(facility.type),
+          );
+        }
+
+        markers[facility.id] = Marker(
+          markerId: MarkerId(facility.id),
+          position: LatLng(facility.lat, facility.lon),
+          icon: icon,
+          infoWindow: InfoWindow(title: facility.name, snippet: facility.type),
+          onTap: widget.disableMarkerTaps ? null : () => widget.onFacilityTap?.call(facility),
+          zIndex: 50,
         );
       }
-
-      markers[facility.id] = Marker(
-        markerId: MarkerId(facility.id),
-        position: LatLng(facility.lat, facility.lon),
-        icon: icon,
-        infoWindow: InfoWindow(title: facility.name, snippet: facility.type),
-        onTap: widget.disableMarkerTaps ? null : () => widget.onFacilityTap?.call(facility),
-        zIndex: 50,
-      );
     }
 
     // Emergency alert markers (red circular dots) (always show)
@@ -638,10 +718,15 @@ class _MapViewState extends State<MapView> {
     }
 
     if (mounted) {
-      setState(() {
-        _markers.clear();
-        _markers.addAll(markers);
-      });
+      try {
+        setState(() {
+          _markers.clear();
+          _markers.addAll(markers);
+        });
+      } catch (e) {
+        debugPrint('[MapView] Error updating markers: $e');
+        // Don't rethrow - just log and continue
+      }
     }
   }
 
@@ -653,6 +738,25 @@ class _MapViewState extends State<MapView> {
     if (t == 'police station') return BitmapDescriptor.hueAzure;
     if (t == 'fire station' || t == 'fire') return BitmapDescriptor.hueOrange;
     return BitmapDescriptor.hueGreen;
+  }
+
+  /// Center map on highlighted facility
+  void _centerOnHighlightedFacility() {
+    if (widget.highlightedFacilityId != null && _mapController != null) {
+      final facility = _facilities.firstWhere(
+        (f) => f.id == widget.highlightedFacilityId,
+        orElse: () => _facilities.first,
+      );
+
+      if (_facilities.contains(facility)) {
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(facility.lat, facility.lon),
+            16, // Zoom level
+          ),
+        );
+      }
+    }
   }
 
   // Map style to hide labels for non-emergency POIs but keep emergency services visible

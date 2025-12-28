@@ -47,7 +47,7 @@ class _NotificationPermissionBannerState
       if (granted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Notifications enabled successfully!'),
+            content: Text(' Notifications enabled successfully!'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -55,7 +55,7 @@ class _NotificationPermissionBannerState
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('❌ Permission denied. Check browser settings or console for details.'),
+            content: Text('[ERROR] Permission denied. Check browser settings or console for details.'),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 5),
           ),

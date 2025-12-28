@@ -13,16 +13,16 @@ class EncryptionService {
   /// Initialize the encryption service
   static Future<void> initialize() async {
     if (_isInitialized) {
-      print('⚠️ EncryptionService already initialized, skipping...');
+      print('[WARN] EncryptionService already initialized, skipping...');
       return;
     }
 
     try {
       print('=== Initializing EncryptionService ===');
       _isInitialized = true;
-      print('✅ EncryptionService initialized successfully');
+      print(' EncryptionService initialized successfully');
     } catch (e) {
-      print('❌ Error initializing EncryptionService: $e');
+      print('[ERROR] Error initializing EncryptionService: $e');
       _isInitialized = false;
     }
   }
@@ -45,10 +45,10 @@ class EncryptionService {
       // Cache the key for performance
       _keyCache[userUID] = key;
 
-      print('✅ Derived encryption key for user');
+      print(' Derived encryption key for user');
       return key;
     } catch (e) {
-      print('❌ Error deriving encryption key: $e');
+      print('[ERROR] Error deriving encryption key: $e');
       rethrow;
     }
   }
@@ -58,7 +58,7 @@ class EncryptionService {
   static Map<String, String> encrypt(String plainText, String userUID) {
     try {
       if (plainText.isEmpty) {
-        print('⚠️ Empty plaintext provided for encryption');
+        print('[WARN] Empty plaintext provided for encryption');
         return {'encryptedData': '', 'iv': ''};
       }
 
@@ -76,7 +76,7 @@ class EncryptionService {
       // Encrypt the data
       final encrypted = encrypter.encrypt(plainText, iv: iv);
 
-      print('✅ Data encrypted successfully');
+      print(' Data encrypted successfully');
 
       // Return both encrypted data and IV (both base64 encoded)
       return {
@@ -84,7 +84,7 @@ class EncryptionService {
         'iv': iv.base64,
       };
     } catch (e) {
-      print('❌ Error encrypting data: $e');
+      print('[ERROR] Error encrypting data: $e');
       rethrow;
     }
   }
@@ -94,7 +94,7 @@ class EncryptionService {
   static String decrypt(String encryptedDataBase64, String ivBase64, String userUID) {
     try {
       if (encryptedDataBase64.isEmpty || ivBase64.isEmpty) {
-        print('⚠️ Empty encrypted data or IV provided for decryption');
+        print('[WARN] Empty encrypted data or IV provided for decryption');
         return '';
       }
 
@@ -112,10 +112,10 @@ class EncryptionService {
       // Decrypt the data
       final decrypted = encrypter.decrypt64(encryptedDataBase64, iv: iv);
 
-      print('✅ Data decrypted successfully');
+      print(' Data decrypted successfully');
       return decrypted;
     } catch (e) {
-      print('❌ Error decrypting data: $e');
+      print('[ERROR] Error decrypting data: $e');
       print('   This may indicate corrupted data or wrong decryption key');
       rethrow;
     }
@@ -127,7 +127,7 @@ class EncryptionService {
       final jsonString = jsonEncode(data);
       return encrypt(jsonString, userUID);
     } catch (e) {
-      print('❌ Error encrypting map: $e');
+      print('[ERROR] Error encrypting map: $e');
       rethrow;
     }
   }
@@ -145,7 +145,7 @@ class EncryptionService {
       }
       return jsonDecode(decrypted) as Map<String, dynamic>;
     } catch (e) {
-      print('❌ Error decrypting to map: $e');
+      print('[ERROR] Error decrypting to map: $e');
       rethrow;
     }
   }
@@ -153,12 +153,12 @@ class EncryptionService {
   /// Clear the key cache (useful for logout or user switching)
   static void clearKeyCache() {
     _keyCache.clear();
-    print('✅ Encryption key cache cleared');
+    print(' Encryption key cache cleared');
   }
 
   /// Clear a specific user's key from cache
   static void clearUserKey(String userUID) {
     _keyCache.remove(userUID);
-    print('✅ Encryption key cleared for user');
+    print(' Encryption key cleared for user');
   }
 }

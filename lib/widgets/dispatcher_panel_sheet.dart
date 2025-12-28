@@ -7,7 +7,7 @@ import 'dispatcher_side_panel.dart';
 class DispatcherPanelSheet extends StatelessWidget {
   final Position? userLocation;
   final Function(EmergencyAlert) onNavigateToAlert;
-  final Function(String alertId) onAcceptAlert;
+  final Future<void> Function(String alertId) onAcceptAlert;
 
   const DispatcherPanelSheet({
     super.key,
@@ -67,7 +67,7 @@ class DispatcherPanelSheet extends StatelessWidget {
     BuildContext context, {
     Position? userLocation,
     required Function(EmergencyAlert) onNavigateToAlert,
-    required Function(String alertId) onAcceptAlert,
+    required Future<void> Function(String alertId) onAcceptAlert,
   }) {
     showModalBottomSheet(
       context: context,

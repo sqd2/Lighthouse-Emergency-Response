@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:html' as html show window;
 import 'edit_profile_screen.dart';
 import 'medical_info_form_screen.dart';
+import 'two_factor_settings_screen.dart';
 import '../services/medical_info_service.dart';
 import '../services/livekit_service.dart';
 
@@ -247,6 +248,29 @@ class _CitizenSettingsScreenState extends State<CitizenSettingsScreen> {
                     ),
                   );
                 }
+              },
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Two-Factor Authentication Section
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.security, color: Colors.blue),
+              title: const Text(
+                'Two-Factor Authentication',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              subtitle: const Text('Secure your account with 2FA'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const TwoFactorSettingsScreen(),
+                  ),
+                );
               },
             ),
           ),

@@ -9,7 +9,7 @@ import '../widgets/emergency_alert_widget.dart';
 import '../widgets/notification_permission_banner.dart';
 import '../widgets/dispatcher_side_panel.dart';
 import '../widgets/incoming_call_dialog.dart';
-import '../widgets/facility_filter_widget.dart';
+import '../widgets/eta_display.dart';
 import '../models/facility_pin.dart';
 import '../models/emergency_alert.dart';
 import '../models/call.dart';
@@ -19,6 +19,7 @@ import '../services/notification_service.dart';
 import '../services/alert_history_service.dart';
 import 'add_facility_screen.dart';
 import 'dispatcher_settings_screen.dart';
+import 'analytics_dashboard.dart';
 
 class DispatcherDashboard extends StatefulWidget {
   const DispatcherDashboard({super.key});
@@ -55,9 +56,12 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   // Tab navigation (no PageView - full screen tabs)
   int _currentPageIndex = 1; // Start on Map tab
 
-  // Facility filtering
-  bool _showFacilityFilter = false;
-  List<FacilityPin> _filteredFacilities = [];
+  // Facility filtering state
+  Set<String> _selectedFacilityTypes = {'hospital', 'clinic', 'police station', 'fire station', 'shelter'};
+  bool _showAllFacilities = true;
+  String? _highlightedFacilityId;
+  String _facilitySearchQuery = '';
+  List<FacilityPin> _currentFacilities = []; // Store for filter dialog
 
   @override
   void initState() {
@@ -276,6 +280,30 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     _activeAlertId = alertId;
 
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Check if dispatcher already has an active alert
+      print('[CHECK] Checking for existing active alerts...');
+      final activeAlertsSnapshot = await FirebaseFirestore.instance
+          .collection('emergency_alerts')
+          .where('acceptedBy', isEqualTo: user.uid)
+          .where('status', whereIn: [
+            EmergencyAlert.STATUS_ACTIVE,
+            EmergencyAlert.STATUS_ARRIVED,
+          ])
+          .limit(1)
+          .get();
+
+      if (activeAlertsSnapshot.docs.isNotEmpty) {
+        print('[BLOCKED] Dispatcher already has an active alert');
+        throw Exception('You already have an active alert. Please resolve it before accepting a new one.');
+      }
+
+      print('[OK] No active alerts found. Proceeding with acceptance...');
+
       //Get initial position
       final initialPosition = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
@@ -283,11 +311,15 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
 
       print('[LOCATION] Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}');
 
-      // Write to Firestore
+      // Update alert with acceptance info AND location
       await FirebaseFirestore.instance
           .collection('emergency_alerts')
           .doc(alertId)
           .update({
+        'status': EmergencyAlert.STATUS_ACTIVE,
+        'acceptedBy': user.uid,
+        'acceptedByEmail': user.email ?? 'Unknown',
+        'acceptedAt': FieldValue.serverTimestamp(),
         'dispatcherLocation': GeoPoint(initialPosition.latitude, initialPosition.longitude),
         'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
       });
@@ -459,11 +491,26 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     );
   }
 
-  void _handleFacilityTap(FacilityPin f) {
+  void _handleFacilityTap(FacilityPin f) async {
+    // Check if current user can delete this facility
+    final user = FirebaseAuth.instance.currentUser;
+    final canDelete = f.source == 'manual' &&
+                      f.meta?['addedBy'] != null &&
+                      f.meta?['addedBy'] == user?.uid;
+
     // Show details for the saved facility
     showModalBottomSheet(
       context: context,
-      builder: (_) => FacilityDetailsSheet(facility: f),
+      builder: (_) => FacilityDetailsSheet(
+        facility: f,
+        userLocation: userLocation,
+        onNavigate: () {
+          Navigator.pop(context); // Close the sheet
+          _navigateToFacility(f);
+        },
+        canDelete: canDelete,
+        onDelete: canDelete ? () => _deleteFacility(f) : null,
+      ),
     );
   }
 
@@ -497,6 +544,54 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
       destLng: alert.lon,
       locationName: 'Emergency Alert',
     );
+  }
+
+  Future<void> _navigateToFacility(FacilityPin facility) async {
+    if (userLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to get your location'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    await navigateToLocation(
+      context: context,
+      userLocation: userLocation!,
+      destLat: facility.lat,
+      destLng: facility.lon,
+      locationName: facility.name,
+    );
+  }
+
+  Future<void> _deleteFacility(FacilityPin facility) async {
+    try {
+      // Delete from Firestore
+      await FirebaseFirestore.instance
+          .collection('facilities')
+          .doc(facility.id)
+          .delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully deleted ${facility.name}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete facility: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   /// Map Firestore docs -> FacilityPin list.
@@ -587,11 +682,208 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         .toList();
   }
 
+  /// Search for facility and highlight it on map
+  void _searchAndHighlightFacility(String query) {
+    if (query.isEmpty) {
+      setState(() => _highlightedFacilityId = null);
+      return;
+    }
+
+    // Get all facilities from the current stream
+    // We'll need to search through StreamBuilder data, so for now we'll do basic search
+    // This method will be called from within the StreamBuilder context where we have facilities
+    debugPrint('[Search] Searching for: $query');
+    setState(() {
+      _facilitySearchQuery = query;
+    });
+  }
+
+  /// Show facility filter bottom sheet
+  void _showFacilityFilterDialog({List<FacilityPin>? facilities}) {
+    final allFacilities = facilities ?? [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.filter_list, color: Colors.white),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Filter Facilities',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedFacilityTypes = {'hospital', 'clinic', 'police station', 'fire station', 'shelter'};
+                            _showAllFacilities = true;
+                            _facilitySearchQuery = '';
+                            _highlightedFacilityId = null;
+                          });
+                          setModalState(() {});
+                        },
+                        child: const Text(
+                          'Reset',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Search bar
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Search facilities...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _facilitySearchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                setState(() {
+                                  _facilitySearchQuery = '';
+                                  _highlightedFacilityId = null;
+                                });
+                                setModalState(() {});
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onSubmitted: (value) {
+                      // Find matching facility
+                      if (value.isNotEmpty && allFacilities.isNotEmpty) {
+                        final query = value.toLowerCase();
+                        final matchedFacility = allFacilities.firstWhere(
+                          (facility) {
+                            final address = facility.meta?['address'] as String? ?? '';
+                            return facility.name.toLowerCase().contains(query) ||
+                                address.toLowerCase().contains(query) ||
+                                facility.type.toLowerCase().contains(query);
+                          },
+                          orElse: () => allFacilities.first,
+                        );
+
+                        setState(() {
+                          _highlightedFacilityId = matchedFacility.id;
+                          _facilitySearchQuery = value;
+                        });
+                      }
+                      Navigator.pop(context); // Close the filter dialog
+                    },
+                    onChanged: (value) {
+                      setState(() {
+                        _facilitySearchQuery = value;
+                      });
+                      setModalState(() {});
+                    },
+                  ),
+                ),
+
+                // Show/Hide All Toggle
+                SwitchListTile(
+                  title: const Text('Show Facilities'),
+                  subtitle: Text(_showAllFacilities ? 'Visible on map' : 'Hidden from map'),
+                  value: _showAllFacilities,
+                  onChanged: (value) {
+                    setState(() {
+                      _showAllFacilities = value;
+                    });
+                    setModalState(() {});
+                  },
+                ),
+
+                if (_showAllFacilities) ...[
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'Facility Types',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
+                  // Facility type chips
+                  _buildFilterChip('hospital', 'Hospital 🏥', Colors.red, setModalState),
+                  _buildFilterChip('clinic', 'Clinic 💊', Colors.pink, setModalState),
+                  _buildFilterChip('police station', 'Police 👮', Colors.blue, setModalState),
+                  _buildFilterChip('fire station', 'Fire 🚒', Colors.orange, setModalState),
+                  _buildFilterChip('shelter', 'Shelter 🏠', Colors.green, setModalState),
+                ],
+
+                const SizedBox(height: 16),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String type, String label, Color color, Function setModalState) {
+    final isSelected = _selectedFacilityTypes.contains(type);
+
+    return CheckboxListTile(
+      title: Text(label),
+      value: isSelected,
+      activeColor: color,
+      onChanged: (value) {
+        setState(() {
+          if (value == true) {
+            _selectedFacilityTypes.add(type);
+          } else {
+            _selectedFacilityTypes.remove(type);
+          }
+        });
+        setModalState(() {});
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _currentPageIndex != 0 ? AppBar(
         title: Text(_getPageTitle()),
+        actions: _currentPageIndex == 1 ? [ // Show filter icon on Map tab
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filter Facilities',
+            onPressed: () => _showFacilityFilterDialog(facilities: _currentFacilities),
+          ),
+        ] : null,
       ) : null,
       body: StreamBuilder<QuerySnapshot>(
         // Listen to facilities
@@ -603,6 +895,15 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
 
           // Merge manual and Google Places facilities
           final allPins = [...manualPins, ...googlePlacesPins];
+
+          // Store facilities for filter dialog
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _currentFacilities.length != allPins.length) {
+              setState(() {
+                _currentFacilities = allPins;
+              });
+            }
+          });
 
           // Nested StreamBuilder for emergency alerts
           return StreamBuilder<QuerySnapshot>(
@@ -629,7 +930,10 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
                   // Tab 1: Map (Full Screen)
                   _buildMapPage(allPins, alerts),
 
-                  // Tab 2: Settings
+                  // Tab 2: Analytics
+                  const AnalyticsDashboard(),
+
+                  // Tab 3: Settings
                   _buildSettingsPage(),
                 ],
               );
@@ -640,6 +944,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentPageIndex,
         onTap: _onBottomNavTap,
+        type: BottomNavigationBarType.fixed, // Needed for 4+ items
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
@@ -648,6 +953,10 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
           BottomNavigationBarItem(
             icon: Icon(Icons.map),
             label: 'Map',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.analytics),
+            label: 'Analytics',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
@@ -665,6 +974,8 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
       case 1:
         return 'Map';
       case 2:
+        return 'Analytics';
+      case 3:
         return 'Settings';
       default:
         return 'Dispatcher';
@@ -680,22 +991,22 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   }
 
   Widget _buildMapPage(List<FacilityPin> allPins, List<EmergencyAlert> alerts) {
-    // Use filtered facilities if filter is active, otherwise show all
-    final displayFacilities = _filteredFacilities.isEmpty ? allPins : _filteredFacilities;
-
     return Stack(
       children: [
         MapView(
           controller: _mapController,
           enableTap: _addMode,
           onMapTap: _handleMapTap,
-          facilities: displayFacilities,
+          facilities: allPins,
           onFacilityTap: _handleFacilityTap,
           emergencyAlerts: alerts,
           onEmergencyAlertTap: _handleEmergencyAlertTap,
           followUserLocation: false,
           routePolyline: currentRoute,
           debugMode: _debugMode,
+          selectedFacilityTypes: _selectedFacilityTypes,
+          showAllFacilities: _showAllFacilities,
+          highlightedFacilityId: _highlightedFacilityId,
         ),
 
         // Notification Permission Banner
@@ -705,6 +1016,14 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
           right: 0,
           child: NotificationPermissionBanner(),
         ),
+
+        // ETA Display (when navigating)
+        if (currentRouteInfo != null)
+          ETADisplay(
+            routeInfo: currentRouteInfo,
+            destinationName: _getNavigationDestinationName(alerts),
+            onCancel: clearRoute,
+          ),
 
         // Fixed Corner Buttons (Google Maps style) - Bottom Left
         // Add Facility Button
@@ -764,58 +1083,20 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
           ),
         ),
 
-        // Filter Button - Top Right
-        Positioned(
-          right: 16,
-          top: 80,
-          child: Container(
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 8,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: FloatingActionButton(
-              heroTag: 'filter',
-              onPressed: () {
-                setState(() {
-                  _showFacilityFilter = !_showFacilityFilter;
-                  // Reset filter when closing
-                  if (!_showFacilityFilter) {
-                    _filteredFacilities = [];
-                  }
-                });
-              },
-              backgroundColor: _showFacilityFilter ? Colors.green : Colors.white,
-              child: Icon(
-                Icons.filter_list,
-                color: _showFacilityFilter ? Colors.white : Colors.grey[700],
-              ),
-            ),
-          ),
-        ),
-
-        // Filter Widget Overlay
-        if (_showFacilityFilter)
-          Positioned(
-            top: 140,
-            right: 16,
-            left: 16,
-            child: FacilityFilterWidget(
-              allFacilities: allPins,
-              onFilteredFacilities: (filtered) {
-                setState(() {
-                  _filteredFacilities = filtered;
-                });
-              },
-            ),
-          ),
       ],
     );
+  }
+
+  /// Get the destination name for navigation display
+  String _getNavigationDestinationName(List<EmergencyAlert> alerts) {
+    if (_activeAlertId != null && destinationLat != null && destinationLon != null) {
+      // Check if navigating to active alert
+      final activeAlert = alerts.where((a) => a.id == _activeAlertId).firstOrNull;
+      if (activeAlert != null) {
+        return 'SOS Alert - ${activeAlert.userEmail}';
+      }
+    }
+    return 'Destination';
   }
 
   Widget _buildSettingsPage() {

@@ -12,7 +12,7 @@ class MedicalInfoService {
   /// Initialize the medical info service
   static Future<void> initialize() async {
     if (_isInitialized) {
-      print('⚠️ MedicalInfoService already initialized, skipping...');
+      print('[WARN] MedicalInfoService already initialized, skipping...');
       return;
     }
 
@@ -20,9 +20,9 @@ class MedicalInfoService {
       print('=== Initializing MedicalInfoService ===');
       await EncryptionService.initialize();
       _isInitialized = true;
-      print('✅ MedicalInfoService initialized successfully');
+      print(' MedicalInfoService initialized successfully');
     } catch (e) {
-      print('❌ Error initializing MedicalInfoService: $e');
+      print('[ERROR] Error initializing MedicalInfoService: $e');
       _isInitialized = false;
     }
   }
@@ -43,6 +43,10 @@ class MedicalInfoService {
       // Encrypt the data
       final encrypted = EncryptionService.encryptMap(medicalDataJson, user.uid);
 
+      // Extract emergency contact phone for SMS notifications
+      // Store it separately (unencrypted) so Cloud Functions can access it
+      final emergencyContactPhone = medicalInfo.emergencyContact.phone.trim();
+
       // Store in Firestore with encryption metadata
       final docRef = _firestore
           .collection('users')
@@ -53,13 +57,17 @@ class MedicalInfoService {
       await docRef.set({
         'encryptedData': encrypted['encryptedData'],
         'iv': encrypted['iv'],
+        'emergencyContactPhone': emergencyContactPhone.isNotEmpty ? emergencyContactPhone : null,
         'updatedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      print('✅ Medical info saved successfully (encrypted)');
+      print(' Medical info saved successfully (encrypted)');
+      if (emergencyContactPhone.isNotEmpty) {
+        print(' Emergency contact phone saved for SMS: ${emergencyContactPhone.substring(0, 3)}***');
+      }
     } catch (e) {
-      print('❌ Error saving medical info: $e');
+      print('[ERROR] Error saving medical info: $e');
       rethrow;
     }
   }
@@ -86,13 +94,13 @@ class MedicalInfoService {
       final doc = await docRef.get();
 
       if (!doc.exists) {
-        print('⚠️ No medical info found');
+        print('[WARN] No medical info found');
         return null;
       }
 
       final data = doc.data();
       if (data == null) {
-        print('⚠️ Medical info document is empty');
+        print('[WARN] Medical info document is empty');
         return null;
       }
 
@@ -101,7 +109,7 @@ class MedicalInfoService {
       final iv = data['iv'] as String?;
 
       if (encryptedData == null || iv == null) {
-        print('⚠️ Missing encrypted data or IV');
+        print('[WARN] Missing encrypted data or IV');
         return null;
       }
 
@@ -115,7 +123,7 @@ class MedicalInfoService {
       // Convert to MedicalInfo object
       final medicalInfo = MedicalInfo.fromJson(decryptedMap);
 
-      print('✅ Medical info retrieved and decrypted successfully');
+      print(' Medical info retrieved and decrypted successfully');
 
       // Log access for audit (if accessing another user's data)
       if (forUserId != null && forUserId != user.uid) {
@@ -124,7 +132,7 @@ class MedicalInfoService {
 
       return medicalInfo;
     } catch (e) {
-      print('❌ Error getting medical info: $e');
+      print('[ERROR] Error getting medical info: $e');
       rethrow;
     }
   }
@@ -148,7 +156,7 @@ class MedicalInfoService {
       final doc = await docRef.get();
       return doc.exists;
     } catch (e) {
-      print('❌ Error checking medical info: $e');
+      print('[ERROR] Error checking medical info: $e');
       return false;
     }
   }
@@ -171,9 +179,9 @@ class MedicalInfoService {
 
       await docRef.delete();
 
-      print('✅ Medical info deleted successfully');
+      print(' Medical info deleted successfully');
     } catch (e) {
-      print('❌ Error deleting medical info: $e');
+      print('[ERROR] Error deleting medical info: $e');
       rethrow;
     }
   }
@@ -192,9 +200,9 @@ class MedicalInfoService {
         'accessedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ Medical info access logged');
+      print(' Medical info access logged');
     } catch (e) {
-      print('⚠️ Failed to log medical info access: $e');
+      print('[WARN] Failed to log medical info access: $e');
       // Don't throw - logging failure shouldn't break the main operation
     }
   }
@@ -217,7 +225,7 @@ class MedicalInfoService {
       final doc = await docRef.get();
 
       if (!doc.exists) {
-        print('⚠️ No medical info to share');
+        print('[WARN] No medical info to share');
         return null;
       }
 
@@ -233,7 +241,7 @@ class MedicalInfoService {
         'ownerId': user.uid, // Dispatcher needs this to decrypt
       };
     } catch (e) {
-      print('❌ Error getting encrypted medical info: $e');
+      print('[ERROR] Error getting encrypted medical info: $e');
       return null;
     }
   }
@@ -248,7 +256,7 @@ class MedicalInfoService {
       final ownerId = encryptedMedicalData['ownerId'] as String?;
 
       if (encryptedData == null || iv == null || ownerId == null) {
-        print('⚠️ Missing encryption data or owner ID');
+        print('[WARN] Missing encryption data or owner ID');
         return null;
       }
 
@@ -261,7 +269,7 @@ class MedicalInfoService {
 
       final medicalInfo = MedicalInfo.fromJson(decryptedMap);
 
-      print('✅ Medical info decrypted from alert');
+      print(' Medical info decrypted from alert');
 
       // Log access
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -271,7 +279,7 @@ class MedicalInfoService {
 
       return medicalInfo;
     } catch (e) {
-      print('❌ Error decrypting medical info from alert: $e');
+      print('[ERROR] Error decrypting medical info from alert: $e');
       rethrow;
     }
   }

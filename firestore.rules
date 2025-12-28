@@ -145,6 +145,13 @@ service cloud.firestore {
       allow write: if isDispatcher();
     }
 
+    // Verification codes for 2FA
+    match /verificationCodes/{userId} {
+      // Users can read and write their own verification codes
+      // This is safe because codes are temporary and validated server-side
+      allow read, write: if isOwner(userId);
+    }
+
     // Root-level match for collectionGroup queries on calls
     // This allows querying calls across all emergency alerts
     match /{path=**}/calls/{callId} {

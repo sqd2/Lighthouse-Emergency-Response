@@ -11,6 +11,7 @@ import '../widgets/notification_permission_banner.dart';
 import '../widgets/medical_info_banner.dart';
 import '../widgets/citizen_side_panel.dart';
 import '../widgets/incoming_call_dialog.dart';
+import '../widgets/eta_display.dart';
 import '../models/facility_pin.dart';
 import '../models/emergency_alert.dart';
 import '../models/call.dart';
@@ -31,6 +32,9 @@ class CitizenDashboard extends StatefulWidget {
 
 class _CitizenDashboardState extends State<CitizenDashboard>
     with RouteNavigationMixin, LocationTrackingMixin {
+  // Map controller
+  final _mapController = MapViewController();
+
   // Dispatcher tracking
   Polyline? _dispatcherRoute;
   GeoPoint? _lastDispatcherLocation; // Track last known dispatcher location
@@ -52,6 +56,13 @@ class _CitizenDashboardState extends State<CitizenDashboard>
 
   // Tab navigation (no PageView - full screen tabs)
   int _currentPageIndex = 1; // Start on Map tab
+
+  // Facility filtering state
+  Set<String> _selectedFacilityTypes = {'hospital', 'clinic', 'police station', 'fire station', 'shelter'};
+  bool _showAllFacilities = true;
+  String? _highlightedFacilityId;
+  String _facilitySearchQuery = '';
+  List<FacilityPin> _currentFacilities = []; // Store for filter dialog
 
   /// Calculate distance between two GeoPoints in meters
   String _calculateDistanceBetween(GeoPoint point1, GeoPoint point2) {
@@ -380,7 +391,184 @@ class _CitizenDashboardState extends State<CitizenDashboard>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54, // Add semi-transparent barrier to block map interaction
+      isDismissible: true,
+      enableDrag: true,
       builder: (context) => SOSSheet(userLocation: userLocation),
+    );
+  }
+
+  /// Show facility filter bottom sheet
+  void _showFacilityFilterDialog({List<FacilityPin>? facilities}) {
+    final allFacilities = facilities ?? [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.filter_list, color: Colors.white),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Filter Facilities',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedFacilityTypes = {'hospital', 'clinic', 'police station', 'fire station', 'shelter'};
+                            _showAllFacilities = true;
+                            _facilitySearchQuery = '';
+                            _highlightedFacilityId = null;
+                          });
+                          setModalState(() {});
+                        },
+                        child: const Text(
+                          'Reset',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Search bar
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Search facilities...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _facilitySearchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                setState(() {
+                                  _facilitySearchQuery = '';
+                                  _highlightedFacilityId = null;
+                                });
+                                setModalState(() {});
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onSubmitted: (value) {
+                      // Find matching facility
+                      if (value.isNotEmpty && allFacilities.isNotEmpty) {
+                        final query = value.toLowerCase();
+                        final matchedFacility = allFacilities.firstWhere(
+                          (facility) {
+                            final address = facility.meta?['address'] as String? ?? '';
+                            return facility.name.toLowerCase().contains(query) ||
+                                address.toLowerCase().contains(query) ||
+                                facility.type.toLowerCase().contains(query);
+                          },
+                          orElse: () => allFacilities.first,
+                        );
+
+                        setState(() {
+                          _highlightedFacilityId = matchedFacility.id;
+                          _facilitySearchQuery = value;
+                        });
+                      }
+                      Navigator.pop(context); // Close the filter dialog
+                    },
+                    onChanged: (value) {
+                      setState(() {
+                        _facilitySearchQuery = value;
+                      });
+                      setModalState(() {});
+                    },
+                  ),
+                ),
+
+                // Show/Hide All Toggle
+                SwitchListTile(
+                  title: const Text('Show Facilities'),
+                  subtitle: Text(_showAllFacilities ? 'Visible on map' : 'Hidden from map'),
+                  value: _showAllFacilities,
+                  onChanged: (value) {
+                    setState(() {
+                      _showAllFacilities = value;
+                    });
+                    setModalState(() {});
+                  },
+                ),
+
+                if (_showAllFacilities) ...[
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'Facility Types',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
+                  // Facility type chips
+                  _buildFilterChip('hospital', 'Hospital 🏥', Colors.red, setModalState),
+                  _buildFilterChip('clinic', 'Clinic 💊', Colors.pink, setModalState),
+                  _buildFilterChip('police station', 'Police 👮', Colors.blue, setModalState),
+                  _buildFilterChip('fire station', 'Fire 🚒', Colors.orange, setModalState),
+                  _buildFilterChip('shelter', 'Shelter 🏠', Colors.green, setModalState),
+                ],
+
+                const SizedBox(height: 16),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String type, String label, Color color, Function setModalState) {
+    final isSelected = _selectedFacilityTypes.contains(type);
+
+    return CheckboxListTile(
+      title: Text(label),
+      value: isSelected,
+      activeColor: color,
+      onChanged: (value) {
+        setState(() {
+          if (value == true) {
+            _selectedFacilityTypes.add(type);
+          } else {
+            _selectedFacilityTypes.remove(type);
+          }
+        });
+        setModalState(() {});
+      },
     );
   }
 
@@ -391,6 +579,13 @@ class _CitizenDashboardState extends State<CitizenDashboard>
     return Scaffold(
       appBar: _currentPageIndex != 0 ? AppBar(
         title: Text(_getPageTitle()),
+        actions: _currentPageIndex == 1 ? [
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filter Facilities',
+            onPressed: () => _showFacilityFilterDialog(facilities: _currentFacilities),
+          ),
+        ] : null,
       ) : null,
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('facilities').snapshots(),
@@ -401,6 +596,13 @@ class _CitizenDashboardState extends State<CitizenDashboard>
 
           // Merge manual and Google Places facilities
           final allPins = [...manualPins, ...googlePlacesPins];
+
+          // Store current facilities for filter dialog
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _currentFacilities = allPins;
+            }
+          });
 
           // Check for active SOS alerts by current user
           return StreamBuilder<QuerySnapshot>(
@@ -572,21 +774,7 @@ class _CitizenDashboardState extends State<CitizenDashboard>
           onPressed: _showSOSDialog,
           backgroundColor: Colors.red,
           elevation: 8,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.sos, size: 40, color: Colors.white),
-              SizedBox(height: 2),
-              Text(
-                'SOS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
+          child: const Icon(Icons.sos, size: 48, color: Colors.white),
           tooltip: 'Send Emergency SOS',
         ),
       ),
@@ -634,6 +822,10 @@ class _CitizenDashboardState extends State<CitizenDashboard>
           debugMode: _debugMode,
           // Disable marker taps when overlays are present to prevent click-through
           disableMarkerTaps: hasActiveAlert || (_medicalInfoChecked && !_hasMedicalInfo && !hasActiveAlert),
+          controller: _mapController,
+          selectedFacilityTypes: _selectedFacilityTypes,
+          showAllFacilities: _showAllFacilities,
+          highlightedFacilityId: _highlightedFacilityId,
         ),
 
         // Active SOS Alert Banner - with solid background to prevent click-through
@@ -667,6 +859,26 @@ class _CitizenDashboardState extends State<CitizenDashboard>
           left: 0,
           right: 0,
           child: NotificationPermissionBanner(),
+        ),
+
+        // ETA Display (when navigating to facility)
+        if (currentRouteInfo != null && !hasActiveAlert)
+          ETADisplay(
+            routeInfo: currentRouteInfo,
+            destinationName: destinationName ?? 'Facility',
+            onCancel: clearRoute,
+          ),
+
+        // Recenter button (bottom-left)
+        Positioned(
+          bottom: 16,
+          left: 16,
+          child: FloatingActionButton(
+            heroTag: 'recenter',
+            onPressed: () => _mapController.recenterOnUserLocation(),
+            backgroundColor: Colors.blue,
+            child: const Icon(Icons.my_location),
+          ),
         ),
 
         // Medical Info Banner (below notification banner)
