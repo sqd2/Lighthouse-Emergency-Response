@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../directions_service.dart';
+import '../services/directions_service.dart';
 
 /// Display ETA information prominently during navigation
 class ETADisplay extends StatelessWidget {

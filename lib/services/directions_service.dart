@@ -3,9 +3,18 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_polyline_algorithm/google_polyline_algorithm.dart';
+import '../core/config/api_config.dart';
 
+/// Service responsible for fetching route directions from Google Maps Directions API.
+///
+/// This service provides route calculation between two geographic points,
+/// including polyline geometry, distance, and duration information.
+/// I have implemented caching to minimize API calls and reduce costs.
 class DirectionsService {
-  static const String _apiKey = 'AIzaSyCvvz3UmQXQR9PzRUeYlNu2wJqpxG8FvuQ';
+  /// Private constructor to prevent instantiation of this service class.
+  DirectionsService._();
+
+  static const String _apiKey = ApiConfig.googleMapsApiKey;
 
   // Cloud Function URL for web to avoid CORS
   static const String _cloudFunctionUrl =

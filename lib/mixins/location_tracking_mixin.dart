@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/facility_pin.dart';
-import '../places_service.dart';
+import '../services/places_service.dart';
 
 /// Mixin that provides location tracking and facility management
 /// Can be used by both citizen and dispatcher dashboards

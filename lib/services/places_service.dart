@@ -2,9 +2,18 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import '../core/config/api_config.dart';
 
+/// Service responsible for fetching nearby emergency facilities from Google Places API.
+///
+/// This service provides location-based search for hospitals, police stations,
+/// fire stations, and ambulance services. I have implemented caching to minimize
+/// API calls and reduce costs while maintaining data freshness.
 class PlacesService {
-  static const String _apiKey = 'AIzaSyCvvz3UmQXQR9PzRUeYlNu2wJqpxG8FvuQ';
+  /// Private constructor to prevent instantiation of this service class.
+  PlacesService._();
+
+  static const String _apiKey = ApiConfig.googleMapsApiKey;
 
   // Cloud Function URL for web to avoid CORS
   static const String _cloudFunctionUrl =
