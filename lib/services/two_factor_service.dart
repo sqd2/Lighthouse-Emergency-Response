@@ -155,7 +155,9 @@ class TwoFactorService {
       final doc = await _firestore.collection('users').doc(userId).get();
       if (!doc.exists) return null;
 
-      final data = doc.data()!;
+      final data = doc.data();
+      if (data == null) return null;
+
       return {
         'twoFactorEnabled': data['twoFactorEnabled'] ?? false,
         'twoFactorMethod': data['twoFactorMethod'] ?? 'none', // 'email', 'sms', 'totp', 'none'

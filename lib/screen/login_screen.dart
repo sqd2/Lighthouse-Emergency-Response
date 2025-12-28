@@ -66,16 +66,31 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         // Check if 2FA is enabled
-        final twoFactorSettings = await _twoFactorService.get2FASettings(userCred.user!.uid);
+        final userId = userCred.user!.uid;
+        final twoFactorSettings = await _twoFactorService.get2FASettings(userId);
         if (twoFactorSettings != null && twoFactorSettings['twoFactorEnabled'] == true) {
+          // Get 2FA method and validate it's not null
+          final twoFactorMethod = twoFactorSettings['twoFactorMethod'] as String?;
+          if (twoFactorMethod == null || twoFactorMethod == 'none') {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('2FA configuration error. Please reconfigure 2FA in settings.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+            setState(() => _isLoading = false);
+            return;
+          }
+
           // Sign out temporarily for 2FA verification
           await _auth.signOut();
           setState(() => _isLoading = false);
 
           // Verify 2FA
           final verified = await _verify2FA(
-            userCred.user!.uid,
-            twoFactorSettings['twoFactorMethod'] as String,
+            userId,
+            twoFactorMethod,
             twoFactorSettings['totpSecret'] as String?,
           );
 
