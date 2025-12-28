@@ -38,15 +38,17 @@ class _TwoFactorSettingsScreenState extends State<TwoFactorSettingsScreen> {
       // Get user data
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       if (userDoc.exists) {
-        final data = userDoc.data()!;
-        setState(() {
-          _userEmail = data['email'] as String?;
-          _userPhone = data['phone'] as String?;
-          _twoFactorEnabled = data['twoFactorEnabled'] ?? false;
-          _twoFactorMethod = data['twoFactorMethod'] ?? 'none';
-          _totpSecret = data['totpSecret'] as String?;
-          _isLoading = false;
-        });
+        final data = userDoc.data();
+        if (data != null) {
+          setState(() {
+            _userEmail = data['email'] as String?;
+            _userPhone = data['phone'] as String?;
+            _twoFactorEnabled = data['twoFactorEnabled'] ?? false;
+            _twoFactorMethod = data['twoFactorMethod'] ?? 'none';
+            _totpSecret = data['totpSecret'] as String?;
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
       if (mounted) {

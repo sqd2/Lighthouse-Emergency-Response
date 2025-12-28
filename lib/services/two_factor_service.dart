@@ -131,7 +131,9 @@ class TwoFactorService {
 
       if (!doc.exists) return false;
 
-      final data = doc.data()!;
+      final data = doc.data();
+      if (data == null) return false;
+
       final storedCode = data['code'] as String;
       final expiresAt = (data['expiresAt'] as Timestamp).toDate();
       final used = data['used'] as bool;
