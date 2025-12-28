@@ -13,8 +13,9 @@ const {getUserName, formatUserDisplay} = require("./src/helpers/user-helpers");
 const {sendNotificationToUser} = require("./src/helpers/notification-helpers");
 const {calculateDistance, toRadians} = require("./src/helpers/distance-helpers");
 
-// Import SOS trigger functions
+// Import trigger functions
 const sosTriggersModule = require("./src/triggers/sos-triggers");
+const communicationTriggersModule = require("./src/triggers/communication-triggers");
 
 // Define environment parameters
 const resendApiKey = defineString("RESEND_API_KEY");
@@ -209,145 +210,9 @@ exports.onDispatcherArrived = sosTriggersModule.onDispatcherArrived;
 exports.onSOSCancelled = sosTriggersModule.onSOSCancelled;
 exports.onSOSResolved = sosTriggersModule.onSOSResolved;
 
-/**
- * Cloud Function: Notify other party when a new message is sent
- */
-exports.onMessageSent = onDocumentCreated("emergency_alerts/{alertId}/messages/{messageId}", async (event) => {
-  const messageData = event.data.data();
-  const alertId = event.params.alertId;
-
-  console.log(`[MSG] New message in alert ${alertId} from ${messageData.senderEmail} (role: ${messageData.senderRole})`);
-
-  try {
-    // Get alert data to find the other party
-    const alertDoc = await admin.firestore()
-        .collection("emergency_alerts")
-        .doc(alertId)
-        .get();
-
-    if (!alertDoc.exists) {
-      console.log(`[ERROR] Alert ${alertId} not found`);
-      return;
-    }
-
-    const alertData = alertDoc.data();
-    console.log(`[INFO] Alert status: ${alertData.status}`);
-    console.log(`[USER] Citizen: ${alertData.userEmail} (ID: ${alertData.userId})`);
-    console.log(`[DISPATCHER] Dispatcher: ${alertData.acceptedByEmail || 'none'} (ID: ${alertData.acceptedBy || 'none'})`);
-
-    // Determine recipient based on sender role
-    let recipientId;
-    let recipientName;
-
-    if (messageData.senderRole === "citizen") {
-      // Send to dispatcher
-      recipientId = alertData.acceptedBy;
-      recipientName = alertData.acceptedByEmail;
-      console.log(`[SEND] Sender is citizen, sending to dispatcher: ${recipientName}`);
-    } else {
-      // Send to citizen
-      recipientId = alertData.userId;
-      recipientName = alertData.userEmail;
-      console.log(`[SEND] Sender is dispatcher, sending to citizen: ${recipientName}`);
-    }
-
-    if (!recipientId) {
-      console.log("[ERROR] No recipient found for message notification");
-      return;
-    }
-
-    console.log(`[TARGET] Recipient ID: ${recipientId}`);
-
-    // Prepare notification content
-    let title = `[MSG] Message from ${messageData.senderEmail}`;
-    let body;
-
-    switch (messageData.messageType) {
-      case "image":
-        body = "[IMAGE] Sent an image";
-        break;
-      case "voice":
-        body = "[AUDIO] Sent a voice message";
-        break;
-      default:
-        body = messageData.message || "Sent a message";
-        // Truncate long messages
-        if (body.length > 50) {
-          body = body.substring(0, 50) + "...";
-        }
-    }
-
-    console.log(`[NOTIFICATION] Notification title: ${title}`);
-    console.log(`[NOTIFICATION] Notification body: ${body}`);
-
-    await sendNotificationToUser(
-        recipientId,
-        title,
-        body,
-        {
-          type: "new_message",
-          alertId: alertId,
-          messageId: event.params.messageId,
-        },
-    );
-
-    console.log(`[SUCCESS] Notified ${recipientName} of new message`);
-  } catch (error) {
-    console.error("[ERROR] Error in onMessageSent:", error);
-  }
-});
-
-/**
- * Cloud Function: Notify receiver when incoming call is created
- */
-exports.onCallCreated = onDocumentCreated("emergency_alerts/{alertId}/calls/{callId}", async (event) => {
-  const callData = event.data.data();
-  const alertId = event.params.alertId;
-  const callId = event.params.callId;
-
-  console.log(`[CALL] New call created: ${callId} in alert ${alertId}`);
-  console.log(`[INFO] Status: ${callData.status}, Type: ${callData.type}`);
-
-  // Only send notification if call is ringing
-  if (callData.status !== "ringing") {
-    console.log(`[INFO] Call not ringing (status: ${callData.status}), skipping notification`);
-    return;
-  }
-
-  try {
-    const receiverId = callData.receiverId;
-    const callerName = callData.callerName || "Unknown";
-    const callerEmail = callData.callerEmail || "";
-    const callType = callData.type === "video" ? "Video" : "Voice";
-    const callerRole = callData.callerRole === "dispatcher" ? "Dispatcher" : "Citizen";
-
-    // Format caller display as "Name (email)"
-    const callerDisplay = formatUserDisplay(callerName, callerEmail);
-
-    console.log(`[DEVICE] Sending incoming call notification to ${receiverId}`);
-    console.log(`[CALL] ${callType} call from ${callerDisplay}`);
-
-    await sendNotificationToUser(
-        receiverId,
-        `[CALL] Incoming ${callType} Call`,
-        `Incoming call from ${callerDisplay}`,
-        {
-          type: "incoming_call",
-          alertId: alertId,
-          callId: callId,
-          callerId: callData.callerId,
-          callerName: callerName,
-          callerRole: callData.callerRole,
-          callType: callData.type,
-          roomName: callData.roomName,
-        },
-    );
-
-    console.log(`[SUCCESS] Sent incoming call notification to ${receiverId}`);
-  } catch (error) {
-    console.error("[ERROR] Error in onCallCreated:", error);
-  }
-});
+// Export communication trigger functions from modular file
+exports.onMessageSent = communicationTriggersModule.onMessageSent;
+exports.onCallCreated = communicationTriggersModule.onCallCreated;
 
 /**
  * Cloud Function: Generate LiveKit access token for WebRTC calls
