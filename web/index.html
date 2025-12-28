@@ -27,8 +27,57 @@
       margin: 0;
       padding: 0;
       width: 100%;
-      height: 100%;
+      /* Use dvh (dynamic viewport height) for Android keyboard handling */
+      height: 100dvh;
+      min-height: 100dvh;
+      max-height: 100dvh;
+      /* Prevent scrolling on the body itself */
       overflow: hidden;
+      position: fixed;
+      /* Prevent bounce scrolling on iOS */
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: none;
+    }
+
+    /* Prevent zoom on input focus */
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+
+    /* Flutter app container should fill exactly the viewport */
+    flt-glass-pane, flutter-view {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: 100dvh !important;
+      max-height: 100dvh !important;
+    }
+
+    /* Hide Google Maps UI controls that get accidentally clicked */
+    /* Hide keyboard shortcuts link */
+    .gm-style-cc {
+      display: none !important;
+    }
+
+    /* Hide "Terms of Service" and other footer links */
+    .gmnoprint a, .gmnoprint span, .gm-style-cc {
+      display: none !important;
+    }
+
+    /* Hide the entire control container at bottom */
+    .gm-style .gm-style-cc {
+      display: none !important;
+    }
+
+    /* Hide "Report a map error" */
+    .gm-style [style*="background-color: rgb(245, 245, 245)"] {
+      display: none !important;
+    }
+
+    /* Keep zoom controls visible but hide other gmnoprint elements */
+    .gmnoprint:not(.gm-bundled-control) {
+      display: none !important;
     }
   </style>
 
@@ -145,118 +194,202 @@
       window.addEventListener('load', function() {
         navigator.serviceWorker.register('/firebase-messaging-sw.js')
           .then(function(registration) {
-            console.log('Service Worker registered with scope:', registration.scope);
+            console.log('[SW] Firebase Messaging SW registered with scope:', registration.scope);
+
+            // Check for updates periodically
+            setInterval(function() {
+              registration.update();
+            }, 60000); // Check every minute
           })
           .catch(function(error) {
-            console.error('Service Worker registration failed:', error);
+            console.error('[SW] Service Worker registration failed:', error);
           });
       });
     }
   </script>
 
-  <!-- NUCLEAR PWA White Screen Fix - Aggressive State Cleanup -->
+  <!-- PWA White Screen Detection Fix - iOS Enhanced -->
   <script>
     (function() {
       'use strict';
 
-      console.log('[PWA Nuclear Fix] Starting aggressive state cleanup...');
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const isStandalone = window.navigator.standalone === true ||
+                          window.matchMedia('(display-mode: standalone)').matches;
+      const isPWA = isStandalone;
 
-      // STEP 1: Clear ALL caches except Firebase auth
-      try {
-        // Clear sessionStorage completely
-        sessionStorage.clear();
-        console.log('[PWA Nuclear Fix] Session storage cleared');
+      console.log('[PWA Fix] Starting white screen detection...', {
+        isIOS,
+        isPWA,
+        userAgent: navigator.userAgent.substring(0, 50)
+      });
 
-        // Clear specific localStorage keys that might cause issues
-        // BUT KEEP: firebase:authUser, firebase:host, etc.
-        const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          // Don't remove Firebase auth keys
-          if (key && !key.startsWith('firebase:') && !key.startsWith('firebaseui::')) {
-            keysToRemove.push(key);
+      // Add global cache clear function for manual recovery
+      window.clearAllCachesAndReload = async function() {
+        console.log('[Cache Clear] Starting comprehensive cache clear...');
+
+        try {
+          // 1. Clear all caches
+          if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            console.log('[Cache Clear] Found', cacheNames.length, 'caches');
+            for (const name of cacheNames) {
+              console.log('[Cache Clear] Deleting cache:', name);
+              await caches.delete(name);
+            }
           }
-        }
-        keysToRemove.forEach(key => {
-          console.log('[PWA Nuclear Fix] Removing localStorage key:', key);
-          localStorage.removeItem(key);
-        });
 
-        // Clear IndexedDB databases (except Firebase)
-        if (window.indexedDB && window.indexedDB.databases) {
-          window.indexedDB.databases().then(databases => {
-            databases.forEach(db => {
-              // Don't delete Firebase databases
-              if (db.name && !db.name.startsWith('firebase')) {
-                console.log('[PWA Nuclear Fix] Deleting IndexedDB:', db.name);
-                window.indexedDB.deleteDatabase(db.name);
-              }
-            });
-          }).catch(e => {
-            console.error('[PWA Nuclear Fix] Error clearing IndexedDB:', e);
-          });
+          // 2. Unregister all service workers
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            console.log('[Cache Clear] Found', registrations.length, 'service workers');
+            for (const registration of registrations) {
+              console.log('[Cache Clear] Unregistering SW');
+              await registration.unregister();
+            }
+          }
+
+          // 3. Clear storage
+          sessionStorage.clear();
+          localStorage.clear();
+
+          console.log('[Cache Clear] All caches cleared, reloading...');
+
+          // 4. Hard reload
+          window.location.href = window.location.href + '?nocache=' + Date.now();
+        } catch (error) {
+          console.error('[Cache Clear] Error:', error);
+          window.location.reload(true);
         }
-      } catch (e) {
-        console.error('[PWA Nuclear Fix] Error during storage cleanup:', e);
+      };
+
+      console.log('[PWA Fix] Global cache clear function available: window.clearAllCachesAndReload()');
+
+      // Function to check for Flutter content
+      function checkForFlutter() {
+        return document.querySelector('flt-glass-pane') ||
+               document.querySelector('flutter-view') ||
+               document.querySelector('canvas') ||
+               document.querySelector('flt-renderer') ||
+               document.querySelector('flt-semantics') ||
+               document.querySelector('flt-scene-host');
       }
 
-      // STEP 2: Detect white screen and auto-reload
+      // iOS needs faster timeout, Android can wait longer
+      const timeout = isIOS ? 8000 : 12000;
+      let checkInterval = null;
+      let hasLoaded = false;
+
+      // Continuous checking every 2 seconds (more aggressive for iOS)
+      if (isIOS && isPWA) {
+        checkInterval = setInterval(() => {
+          if (hasLoaded) {
+            clearInterval(checkInterval);
+            return;
+          }
+
+          if (checkForFlutter()) {
+            console.log('[PWA Fix - iOS] Flutter detected via interval check');
+            hasLoaded = true;
+            clearInterval(checkInterval);
+          }
+        }, 2000);
+      }
+
+      // Main timeout check
       let appLoadTimeout = setTimeout(() => {
-        console.error('[PWA Nuclear Fix] App took too long to load!');
-        const hasFlutterContent = document.querySelector('flt-glass-pane') ||
-                                  document.querySelector('flutter-view') ||
-                                  document.querySelector('canvas');
+        console.warn('[PWA Fix] App took longer than expected to load, checking...');
+        const hasFlutterContent = checkForFlutter();
 
         if (!hasFlutterContent) {
-          console.error('[PWA Nuclear Fix] NO FLUTTER CONTENT - FORCE RELOAD');
-          // Set flag to prevent infinite reload loop
-          const reloadCount = parseInt(sessionStorage.getItem('reload_count') || '0');
-          if (reloadCount < 3) {
-            sessionStorage.setItem('reload_count', (reloadCount + 1).toString());
-            window.location.reload();
+          console.error('[PWA Fix] NO FLUTTER CONTENT DETECTED - RELOADING');
+
+          // Prevent infinite reload loop
+          const reloadCount = parseInt(sessionStorage.getItem('pwa_reload_count') || '0');
+          const lastReloadTime = parseInt(sessionStorage.getItem('pwa_last_reload') || '0');
+          const now = Date.now();
+
+          // Reset counter if last reload was more than 2 minutes ago
+          if (now - lastReloadTime > 120000) {
+            sessionStorage.setItem('pwa_reload_count', '0');
+          }
+
+          // iOS gets 3 tries instead of 2 (more prone to issues)
+          const maxReloads = isIOS ? 3 : 2;
+
+          if (reloadCount < maxReloads) {
+            sessionStorage.setItem('pwa_reload_count', (reloadCount + 1).toString());
+            sessionStorage.setItem('pwa_last_reload', now.toString());
+            console.log(`[PWA Fix] Reload attempt ${reloadCount + 1}/${maxReloads} - CLEARING CACHES FIRST`);
+
+            // Clear caches before reload to avoid loading broken cached version
+            if ('caches' in window) {
+              caches.keys().then(function(cacheNames) {
+                return Promise.all(
+                  cacheNames.map(function(name) {
+                    console.log('[PWA Fix] Deleting cache:', name);
+                    return caches.delete(name);
+                  })
+                );
+              }).then(function() {
+                console.log('[PWA Fix] Caches cleared, reloading...');
+                // Hard reload with cache bust
+                window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now();
+              }).catch(function(error) {
+                console.error('[PWA Fix] Cache clear failed:', error);
+                window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now();
+              });
+            } else {
+              // No cache API available, just reload with cache bust
+              window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now();
+            }
           } else {
-            console.error('[PWA Nuclear Fix] Too many reloads, giving up');
+            console.error('[PWA Fix] Too many reload attempts, showing error');
             document.body.innerHTML = `
-              <div style="display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; font-family: Arial, sans-serif;">
-                <h1 style="color: #d32f2f;">Failed to Load</h1>
-                <p>Please uninstall and reinstall the app</p>
-                <button onclick="window.location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer;">Try Again</button>
+              <div style="display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; font-family: Arial, sans-serif; padding: 20px; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 20px;">[WARN]</div>
+                <h1 style="color: #d32f2f; margin: 10px 0;">Failed to Load</h1>
+                <p style="color: #666; margin: 10px 0 20px 0;">The app failed to start after multiple attempts.</p>
+                <p style="color: #999; font-size: 12px; margin: 10px 0;">This may be caused by cached data. Try clearing the cache below.</p>
+                ${isIOS ? '<p style="color: #666; font-size: 14px; margin: 10px 0;">iOS detected - If clearing cache doesn\'t work, force close and reopen</p>' : ''}
+                <button onclick="window.clearAllCachesAndReload()" style="margin: 10px; padding: 12px 24px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Clear All Caches & Reload</button>
+                <button onclick="alert('${isIOS ? '1. Swipe up from bottom to see all apps\\n2. Find Lighthouse and swipe up to close\\n3. Wait 5 seconds\\n4. Tap the app icon to reopen' : '1. Open Chrome menu (3 dots)\\n2. Go to Settings > Apps\\n3. Find Lighthouse\\n4. Tap Uninstall\\n5. Visit the site again to reinstall'}');" style="margin: 10px; padding: 12px 24px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">${isIOS ? 'Force Close Help' : 'Reinstall Help'}</button>
+                <div style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px; font-size: 12px; color: #666;">
+                  <div><strong>For developers:</strong></div>
+                  <div>Open browser console and run: <code style="background: #fff; padding: 2px 6px;">window.clearAllCachesAndReload()</code></div>
+                </div>
               </div>
             `;
           }
+        } else {
+          console.log('[PWA Fix] Flutter content detected, app is loading...');
         }
-      }, 8000); // 8 second timeout
+      }, timeout);
 
-      // Clear timeout once Flutter loads
+      // Clear timeout once Flutter loads successfully
       window.addEventListener('flutter-first-frame', () => {
+        hasLoaded = true;
         clearTimeout(appLoadTimeout);
-        sessionStorage.removeItem('reload_count');
-        console.log('[PWA Nuclear Fix] ✅ Flutter loaded successfully');
+        if (checkInterval) clearInterval(checkInterval);
+        sessionStorage.removeItem('pwa_reload_count');
+        sessionStorage.removeItem('pwa_last_reload');
+        console.log('[PWA Fix]  Flutter loaded successfully');
       });
 
-      // STEP 3: Monitor for errors and auto-reload
-      let errorCount = 0;
-      const maxErrors = 5;
-
-      window.addEventListener('error', (event) => {
-        console.error('[PWA Nuclear Fix] ❌ Unhandled error:', event.error);
-        errorCount++;
-        if (errorCount >= maxErrors) {
-          console.error('[PWA Nuclear Fix] Too many errors, reloading...');
-          window.location.reload();
-        }
+      // Also listen for DOMContentLoaded
+      document.addEventListener('DOMContentLoaded', () => {
+        console.log('[PWA Fix] DOMContentLoaded fired');
+        setTimeout(() => {
+          if (checkForFlutter()) {
+            hasLoaded = true;
+            clearTimeout(appLoadTimeout);
+            if (checkInterval) clearInterval(checkInterval);
+            console.log('[PWA Fix]  Flutter detected after DOMContentLoaded');
+          }
+        }, 1000);
       });
 
-      window.addEventListener('unhandledrejection', (event) => {
-        console.error('[PWA Nuclear Fix] ❌ Unhandled promise rejection:', event.reason);
-        // If it's a LiveKit error, reload immediately
-        if (event.reason && event.reason.toString().includes('livekit')) {
-          console.error('[PWA Nuclear Fix] LiveKit error detected, reloading...');
-          window.location.reload();
-        }
-      });
-
-      console.log('[PWA Nuclear Fix] All safeguards active ✅');
+      console.log('[PWA Fix] Detection active  (timeout: ' + timeout + 'ms)');
     })();
   </script>
 
@@ -295,7 +428,7 @@
             }
           });
 
-          console.log('[MediaCleanup] ✅ All media tracks stopped');
+          console.log('[MediaCleanup]  All media tracks stopped');
           return true;
         }
       } catch (e) {
@@ -307,7 +440,94 @@
     console.log('[MediaCleanup] Helper loaded - window.forceStopAllMediaTracks() available');
   </script>
 
+  <!-- Android PWA Keyboard Fix - Simplified -->
+  <script>
+    (function() {
+      console.log('[Android Keyboard Fix] Initializing...');
+
+      // Detect if we're on Android
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      if (!isAndroid) {
+        console.log('[Android Keyboard Fix] Not Android, skipping');
+        return;
+      }
+
+      console.log('[Android Keyboard Fix] Android detected, applying fixes');
+
+      let isKeyboardOpen = false;
+
+      // Simple reset function - just scroll and force layout recalc
+      function resetViewport() {
+        console.log('[Android Keyboard Fix] Resetting viewport');
+
+        // Force scroll to top (multiple times for reliability)
+        for (let i = 0; i < 3; i++) {
+          setTimeout(function() {
+            window.scrollTo(0, 0);
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+
+            // Force layout recalculation
+            document.body.style.height = '100vh';
+            void document.body.offsetHeight;
+            document.body.style.height = '';
+
+            console.log('[Android Keyboard Fix] Reset iteration', i + 1);
+          }, i * 100);
+        }
+      }
+
+      // Use Visual Viewport API for keyboard detection
+      if ('visualViewport' in window) {
+        let lastHeight = window.visualViewport.height;
+
+        window.visualViewport.addEventListener('resize', function() {
+          const currentHeight = window.visualViewport.height;
+          const heightDiff = lastHeight - currentHeight;
+          const screenHeight = window.screen.height;
+
+          console.log('[Android Keyboard Fix] Viewport resize:', {
+            lastHeight,
+            currentHeight,
+            diff: heightDiff,
+            percentageOfScreen: (currentHeight / screenHeight * 100).toFixed(1) + '%'
+          });
+
+          // Keyboard is opening
+          if (heightDiff > 150 && !isKeyboardOpen) {
+            isKeyboardOpen = true;
+            console.log('[Android Keyboard Fix] 🎹 Keyboard OPENED');
+
+            // Just prevent scroll on open
+            window.scrollTo(0, 0);
+          }
+          // Keyboard is closing
+          else if ((heightDiff < -100 || currentHeight > screenHeight * 0.8) && isKeyboardOpen) {
+            isKeyboardOpen = false;
+            console.log('[Android Keyboard Fix] 🎹 Keyboard CLOSED - resetting');
+
+            // Reset viewport when keyboard closes
+            resetViewport();
+          }
+
+          lastHeight = currentHeight;
+        });
+      }
+
+      // Reset on input blur
+      document.addEventListener('blur', function(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+          console.log('[Android Keyboard Fix] Input blur, resetting in 200ms');
+          setTimeout(resetViewport, 200);
+          setTimeout(resetViewport, 400);
+        }
+      }, true);
+
+      console.log('[Android Keyboard Fix] Initialization complete ');
+    })();
+  </script>
+
   <!-- Debug Console for iPhone Testing - Load last after everything else -->
-  <script defer src="debug-console.js?v=2.8"></script>
+  <script defer src="debug-console.js?v=3.2"></script>
 </body>
 </html>

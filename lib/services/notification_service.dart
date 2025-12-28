@@ -15,7 +15,7 @@ class NotificationService {
   /// Initialize notifications and request permissions
   static Future<void> initialize() async {
     if (_isInitialized) {
-      print('⚠️ Notification Service already initialized, skipping...');
+      print('[WARN] Notification Service already initialized, skipping...');
       return;
     }
 
@@ -70,11 +70,11 @@ class NotificationService {
         print('Browser permission result: $browserPermission');
 
         if (browserPermission == 'granted') {
-          print('✅ Browser permission granted, setting up FCM...');
+          print(' Browser permission granted, setting up FCM...');
           await _setupNotifications();
           return true;
         } else {
-          print('❌ Browser permission not granted: $browserPermission');
+          print('[ERROR] Browser permission not granted: $browserPermission');
           return false;
         }
       } else {
@@ -113,7 +113,7 @@ class NotificationService {
         await FCMWeb.setupForegroundListener();
         _listenerSetup = true;
       } else if (kIsWeb && _listenerSetup) {
-        print('⚠️ Foreground listener already set up, skipping...');
+        print('[WARN] Foreground listener already set up, skipping...');
       }
 
       // Get and save FCM token
@@ -172,10 +172,10 @@ class NotificationService {
           'BKv4RxnCncYJ6C4Pu5cgx6bMSw6wjC798s6e02Np9fSTLzaSrC8XTsESJuXNZDHQmR7ob6zYPqXlVmgMKN94eOA',
         );
         if (token != null) {
-          print('✅ FCM Token obtained successfully!');
-          print('📋 Full FCM Token (for Firebase test device): $token');
+          print(' FCM Token obtained successfully!');
+          print(' Full FCM Token (for Firebase test device): $token');
         } else {
-          print('❌ Failed to obtain FCM token');
+          print('[ERROR] Failed to obtain FCM token');
         }
       } else {
         print('Requesting FCM token for mobile...');
@@ -197,12 +197,12 @@ class NotificationService {
   static Future<void> _saveFCMToken(String token) async {
     // Prevent duplicate saves of the same token
     if (_tokenSaveInProgress) {
-      print('⚠️ Token save already in progress, skipping duplicate...');
+      print('[WARN] Token save already in progress, skipping duplicate...');
       return;
     }
 
     if (_lastSavedToken == token) {
-      print('⚠️ Token already saved recently, skipping duplicate...');
+      print('[WARN] Token already saved recently, skipping duplicate...');
       return;
     }
 
@@ -248,7 +248,7 @@ class NotificationService {
 
       _lastSavedToken = token;
 
-      print('✅ FCM token saved to array (${currentTokens.length} total devices)');
+      print(' FCM token saved to array (${currentTokens.length} total devices)');
       print('   Token: ${token.substring(0, 20)}...');
       print('   Platform: ${kIsWeb ? "web" : "mobile"}');
     } catch (e) {

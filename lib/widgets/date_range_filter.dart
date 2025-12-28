@@ -42,58 +42,69 @@ class _DateRangeFilterState extends State<DateRangeFilter> {
   void _showFilterDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filter by Date Range'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildPresetOption(
-              DateRangePreset.last7Days,
-              'Last 7 Days',
-              Icons.calendar_today,
-            ),
-            _buildPresetOption(
-              DateRangePreset.last30Days,
-              'Last 30 Days',
-              Icons.calendar_month,
-            ),
-            _buildPresetOption(
-              DateRangePreset.custom,
-              'Custom Range',
-              Icons.date_range,
-            ),
-            if (_selectedPreset == DateRangePreset.custom) ...[
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-              _buildDateButton(
-                'Start Date',
-                _customStart,
-                (date) => setState(() => _customStart = date),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Filter by Date Range'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildPresetOption(
+                DateRangePreset.last7Days,
+                'Last 7 Days',
+                Icons.calendar_today,
+                setDialogState,
               ),
-              const SizedBox(height: 8),
-              _buildDateButton(
-                'End Date',
-                _customEnd,
-                (date) => setState(() => _customEnd = date),
+              _buildPresetOption(
+                DateRangePreset.last30Days,
+                'Last 30 Days',
+                Icons.calendar_month,
+                setDialogState,
               ),
+              _buildPresetOption(
+                DateRangePreset.custom,
+                'Custom Range',
+                Icons.date_range,
+                setDialogState,
+              ),
+              if (_selectedPreset == DateRangePreset.custom) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                _buildDateButton(
+                  'Start Date',
+                  _customStart,
+                  (date) => setDialogState(() {
+                    setState(() => _customStart = date);
+                  }),
+                  setDialogState,
+                ),
+                const SizedBox(height: 8),
+                _buildDateButton(
+                  'End Date',
+                  _customEnd,
+                  (date) => setDialogState(() {
+                    setState(() => _customEnd = date);
+                  }),
+                  setDialogState,
+                ),
+              ],
             ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _applyFilter();
+                Navigator.pop(context);
+              },
+              child: const Text('Apply'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _applyFilter();
-              Navigator.pop(context);
-            },
-            child: const Text('Apply'),
-          ),
-        ],
       ),
     );
   }
@@ -102,10 +113,13 @@ class _DateRangeFilterState extends State<DateRangeFilter> {
     DateRangePreset preset,
     String label,
     IconData icon,
+    StateSetter setDialogState,
   ) {
     final isSelected = _selectedPreset == preset;
     return InkWell(
-      onTap: () => setState(() => _selectedPreset = preset),
+      onTap: () => setDialogState(() {
+        setState(() => _selectedPreset = preset);
+      }),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
@@ -119,7 +133,9 @@ class _DateRangeFilterState extends State<DateRangeFilter> {
               groupValue: _selectedPreset,
               onChanged: (value) {
                 if (value != null) {
-                  setState(() => _selectedPreset = value);
+                  setDialogState(() {
+                    setState(() => _selectedPreset = value);
+                  });
                 }
               },
             ),
@@ -142,6 +158,7 @@ class _DateRangeFilterState extends State<DateRangeFilter> {
     String label,
     DateTime date,
     ValueChanged<DateTime> onChanged,
+    StateSetter setDialogState,
   ) {
     return Row(
       children: [

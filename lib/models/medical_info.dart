@@ -4,11 +4,13 @@ import 'dart:convert';
 class EmergencyContact {
   final String name;
   final String phone;
+  final String email;
   final String relationship;
 
   EmergencyContact({
     required this.name,
     required this.phone,
+    this.email = '',
     required this.relationship,
   });
 
@@ -16,6 +18,7 @@ class EmergencyContact {
     return {
       'name': name,
       'phone': phone,
+      'email': email,
       'relationship': relationship,
     };
   }
@@ -24,11 +27,12 @@ class EmergencyContact {
     return EmergencyContact(
       name: json['name'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
+      email: json['email'] as String? ?? '',
       relationship: json['relationship'] as String? ?? '',
     );
   }
 
-  bool get isEmpty => name.isEmpty && phone.isEmpty && relationship.isEmpty;
+  bool get isEmpty => name.isEmpty && phone.isEmpty && email.isEmpty && relationship.isEmpty;
 }
 
 /// Medical information for a citizen user
@@ -81,7 +85,7 @@ class MedicalInfo {
       emergencyContact: json['emergencyContact'] != null
           ? EmergencyContact.fromJson(
               json['emergencyContact'] as Map<String, dynamic>)
-          : EmergencyContact(name: '', phone: '', relationship: ''),
+          : EmergencyContact(name: '', phone: '', email: '', relationship: ''),
       notes: json['notes'] as String? ?? '',
     );
   }
@@ -93,7 +97,7 @@ class MedicalInfo {
       allergies: [],
       medications: [],
       conditions: [],
-      emergencyContact: EmergencyContact(name: '', phone: '', relationship: ''),
+      emergencyContact: EmergencyContact(name: '', phone: '', email: '', relationship: ''),
       notes: '',
     );
   }

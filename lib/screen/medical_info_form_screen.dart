@@ -23,6 +23,7 @@ class _MedicalInfoFormScreenState extends State<MedicalInfoFormScreen> {
   final List<String> _conditions = [];
   final TextEditingController _emergencyNameController = TextEditingController();
   final TextEditingController _emergencyPhoneController = TextEditingController();
+  final TextEditingController _emergencyEmailController = TextEditingController();
   final TextEditingController _emergencyRelationshipController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
@@ -59,6 +60,7 @@ class _MedicalInfoFormScreenState extends State<MedicalInfoFormScreen> {
         _conditions.addAll(widget.existingInfo!.conditions);
         _emergencyNameController.text = widget.existingInfo!.emergencyContact.name;
         _emergencyPhoneController.text = widget.existingInfo!.emergencyContact.phone;
+        _emergencyEmailController.text = widget.existingInfo!.emergencyContact.email;
         _emergencyRelationshipController.text = widget.existingInfo!.emergencyContact.relationship;
         _notesController.text = widget.existingInfo!.notes;
       });
@@ -69,6 +71,7 @@ class _MedicalInfoFormScreenState extends State<MedicalInfoFormScreen> {
   void dispose() {
     _emergencyNameController.dispose();
     _emergencyPhoneController.dispose();
+    _emergencyEmailController.dispose();
     _emergencyRelationshipController.dispose();
     _notesController.dispose();
     _allergyController.dispose();
@@ -93,6 +96,7 @@ class _MedicalInfoFormScreenState extends State<MedicalInfoFormScreen> {
         emergencyContact: EmergencyContact(
           name: _emergencyNameController.text.trim(),
           phone: _emergencyPhoneController.text.trim(),
+          email: _emergencyEmailController.text.trim(),
           relationship: _emergencyRelationshipController.text.trim(),
         ),
         notes: _notesController.text.trim(),
@@ -339,6 +343,19 @@ class _MedicalInfoFormScreenState extends State<MedicalInfoFormScreen> {
                         labelText: 'Contact Phone',
                         prefixIcon: Icon(Icons.phone),
                         border: OutlineInputBorder(),
+                        hintText: '+60123456789',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _emergencyEmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Contact Email (optional)',
+                        prefixIcon: Icon(Icons.email),
+                        border: OutlineInputBorder(),
+                        hintText: 'Used if phone is unavailable',
                       ),
                     ),
                     const SizedBox(height: 16),

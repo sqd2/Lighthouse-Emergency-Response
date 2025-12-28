@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AddFacilityScreen extends StatefulWidget {
   final double? presetLat;
@@ -31,6 +32,11 @@ class _AddFacilityScreenState extends State<AddFacilityScreen> {
     }
 
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
       await FirebaseFirestore.instance.collection('facilities').add({
         'name': _nameController.text.trim(),
         'category': _selectedCategory,
@@ -43,7 +49,7 @@ class _AddFacilityScreenState extends State<AddFacilityScreen> {
         'contactPerson': _contactNameController.text.trim(),
         'contactNumber': _contactNumberController.text.trim(),
         'location': GeoPoint(widget.presetLat!, widget.presetLon!),
-        'addedBy': 'uid_placeholder',
+        'addedBy': user.uid,
         'createdAt': Timestamp.now(),
         'source': 'custom',
       });

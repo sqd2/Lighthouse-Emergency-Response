@@ -197,7 +197,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
 
   Future<void> _startLocationUpdates() async {
     print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    print('🚀 STARTING DISPATCHER LOCATION UPDATES');
+    print(' STARTING DISPATCHER LOCATION UPDATES');
     print('   Alert ID: ${widget.alert.id}');
     print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
@@ -210,7 +210,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
         ),
       );
 
-      print('✅ Initial dispatcher location: ${currentPosition.latitude}, ${currentPosition.longitude}');
+      print(' Initial dispatcher location: ${currentPosition.latitude}, ${currentPosition.longitude}');
 
       // Send initial location to Firestore
       print('⏳ Sending initial location to emergency_alerts/${widget.alert.id}/dispatcherLocation...');
@@ -222,7 +222,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
         'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ Initial dispatcher location written to Firestore!');
+      print(' Initial dispatcher location written to Firestore!');
       print('   Path: emergency_alerts/${widget.alert.id}');
       print('   Field: dispatcherLocation = GeoPoint(${currentPosition.latitude}, ${currentPosition.longitude})');
 
@@ -234,7 +234,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
           distanceFilter: 5, // Update every 5 meters
         ),
       ).listen((Position position) {
-        print('📍 Dispatcher moved! New position: ${position.latitude}, ${position.longitude}');
+        print(' Dispatcher moved! New position: ${position.latitude}, ${position.longitude}');
 
         // Update dispatcher location in Firestore
         FirebaseFirestore.instance
@@ -244,17 +244,17 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
           'dispatcherLocation': GeoPoint(position.latitude, position.longitude),
           'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
         }).then((_) {
-          print('✅ Location updated in Firestore: ${position.latitude}, ${position.longitude}');
+          print(' Location updated in Firestore: ${position.latitude}, ${position.longitude}');
         }).catchError((error) {
-          print('❌ ERROR updating dispatcher location: $error');
+          print('[ERROR] ERROR updating dispatcher location: $error');
         });
       }, onError: (error) {
-        print('❌ ERROR in location stream: $error');
+        print('[ERROR] ERROR in location stream: $error');
       });
 
-      print('✅ Location stream started successfully!');
+      print(' Location stream started successfully!');
     } catch (e) {
-      print('❌ ERROR getting initial location: $e');
+      print('[ERROR] ERROR getting initial location: $e');
       print('   Stack trace: ${StackTrace.current}');
     }
   }
@@ -276,7 +276,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
         'arrivedAt': FieldValue.serverTimestamp(),
       });
 
-      print('[MARK ARRIVED] ✅ Firestore update successful!');
+      print('[MARK ARRIVED]  Firestore update successful!');
 
       if (!mounted) return;
 
@@ -287,7 +287,7 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
         ),
       );
     } catch (e) {
-      print('[MARK ARRIVED] ❌ Error: $e');
+      print('[MARK ARRIVED] [ERROR] Error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

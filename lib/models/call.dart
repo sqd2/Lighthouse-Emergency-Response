@@ -7,6 +7,7 @@ class Call {
   final String callerId;
   final String receiverId;
   final String callerName;
+  final String? callerEmail;
   final String callerRole; // 'dispatcher' or 'citizen'
   final String type; // 'video' or 'audio'
   final String status; // 'ringing', 'connecting', 'active', 'ended', 'missed', 'rejected'
@@ -33,6 +34,7 @@ class Call {
     required this.callerId,
     required this.receiverId,
     required this.callerName,
+    this.callerEmail,
     required this.callerRole,
     required this.type,
     required this.status,
@@ -51,6 +53,7 @@ class Call {
       callerId: data['callerId'] ?? '',
       receiverId: data['receiverId'] ?? '',
       callerName: data['callerName'] ?? 'Unknown',
+      callerEmail: data['callerEmail'],
       callerRole: data['callerRole'] ?? 'citizen',
       type: data['type'] ?? TYPE_AUDIO,
       status: data['status'] ?? STATUS_RINGING,
@@ -68,6 +71,7 @@ class Call {
       'callerId': callerId,
       'receiverId': receiverId,
       'callerName': callerName,
+      'callerEmail': callerEmail,
       'callerRole': callerRole,
       'type': type,
       'status': status,
@@ -85,6 +89,7 @@ class Call {
     String? callerId,
     String? receiverId,
     String? callerName,
+    String? callerEmail,
     String? callerRole,
     String? type,
     String? status,
@@ -99,6 +104,7 @@ class Call {
       callerId: callerId ?? this.callerId,
       receiverId: receiverId ?? this.receiverId,
       callerName: callerName ?? this.callerName,
+      callerEmail: callerEmail ?? this.callerEmail,
       callerRole: callerRole ?? this.callerRole,
       type: type ?? this.type,
       status: status ?? this.status,

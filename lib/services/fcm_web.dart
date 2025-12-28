@@ -75,9 +75,9 @@ class FCMWeb {
             });
 
             setTimeout(() => notification.close(), 5000);
-            console.log('✅ Test notification shown');
+            console.log(' Test notification shown');
           } else {
-            console.error('❌ Notification permission denied');
+            console.error('[ERROR] Notification permission denied');
           }
         })()
       ''');
@@ -136,27 +136,27 @@ class FCMWeb {
 
             // Check if listener already exists
             if (window.fcmListenerActive) {
-              console.log('⚠️ Foreground listener already active, skipping setup');
+              console.log('[WARN] Foreground listener already active, skipping setup');
               return;
             }
 
             if (typeof firebase === 'undefined') {
-              console.error('❌ Firebase SDK not loaded');
+              console.error('[ERROR] Firebase SDK not loaded');
               return;
             }
-            console.log('✅ Firebase SDK is loaded');
+            console.log(' Firebase SDK is loaded');
 
             // Wait for service worker to be ready
             const registration = await navigator.serviceWorker.ready;
-            console.log('✅ Service worker ready:', registration.scope);
+            console.log(' Service worker ready:', registration.scope);
 
             // Store messaging instance globally for debugging
             if (!window.fcmMessaging) {
               window.fcmMessaging = firebase.messaging();
-              console.log('✅ Created new messaging instance');
+              console.log(' Created new messaging instance');
             }
             const messaging = window.fcmMessaging;
-            console.log('✅ Using messaging instance');
+            console.log(' Using messaging instance');
 
             // Check notification permission
             console.log('Notification permission:', Notification.permission);
@@ -166,15 +166,15 @@ class FCMWeb {
               console.log('Testing if FCM listener is active...');
               console.log('Messaging instance exists:', !!window.fcmMessaging);
             };
-            console.log('✅ Test function available: window.testFCMListener()');
+            console.log(' Test function available: window.testFCMListener()');
 
             // Function to show notification (used by both listeners)
             const showNotification = (title, body) => {
-              console.log('[PAGE] 📬 Showing notification:', title, body);
+              console.log('[PAGE]  Showing notification:', title, body);
 
               if (Notification.permission === 'granted') {
                 try {
-                  console.log('[PAGE] 🎯 Creating notification...');
+                  console.log('[PAGE]  Creating notification...');
                   const notification = new Notification(title, {
                     body: body,
                     icon: '/icons/Icon-192.png',
@@ -194,19 +194,19 @@ class FCMWeb {
                   // Auto close after 10 seconds
                   setTimeout(() => notification.close(), 10000);
 
-                  console.log('[PAGE] ✅ Notification displayed successfully');
+                  console.log('[PAGE]  Notification displayed successfully');
                 } catch (notifError) {
-                  console.error('[PAGE] ❌ Error creating notification:', notifError);
+                  console.error('[PAGE] [ERROR] Error creating notification:', notifError);
                 }
               } else {
-                console.error('[PAGE] ❌ Permission not granted:', Notification.permission);
+                console.error('[PAGE] [ERROR] Permission not granted:', Notification.permission);
               }
             };
 
             // Handle foreground messages directly from Firebase onMessage
-            console.log('⏳ Setting up Firebase onMessage listener...');
+            console.log(' Setting up Firebase onMessage listener...');
             messaging.onMessage((payload) => {
-              console.log('[PAGE] 🔔 Foreground message received via Firebase onMessage!', payload);
+              console.log('[PAGE]  Foreground message received via Firebase onMessage!', payload);
 
               // Extract title and body from data field (data-only messages)
               const title = payload.data?.title || payload.notification?.title || 'Lighthouse';
@@ -214,17 +214,17 @@ class FCMWeb {
 
               showNotification(title, body);
             });
-            console.log('✅ Firebase onMessage listener registered');
+            console.log(' Firebase onMessage listener registered');
 
             // Also handle messages forwarded from service worker
-            console.log('⏳ Setting up service worker postMessage listener...');
+            console.log(' Setting up service worker postMessage listener...');
             if (!window.fcmMessageHandler) {
               console.log('[PAGE] Creating service worker message handler');
               window.fcmMessageHandler = (event) => {
-                console.log('[PAGE] 📨 Service worker message received:', event.data);
+                console.log('[PAGE]  Service worker message received:', event.data);
 
                 if (event.data && event.data.type === 'FCM_MESSAGE') {
-                  console.log('[PAGE] 🔔 Processing FCM message from service worker');
+                  console.log('[PAGE]  Processing FCM message from service worker');
 
                   const payload = event.data.payload;
                   // Extract title and body from data field (data-only messages)
@@ -233,27 +233,27 @@ class FCMWeb {
 
                   showNotification(title, body);
                 } else {
-                  console.log('[PAGE] ⚠️ Not an FCM_MESSAGE, ignoring');
+                  console.log('[PAGE] [WARN] Not an FCM_MESSAGE, ignoring');
                 }
               };
 
               navigator.serviceWorker.addEventListener('message', window.fcmMessageHandler);
-              console.log('✅ Service worker postMessage listener registered');
+              console.log(' Service worker postMessage listener registered');
             } else {
-              console.log('⚠️ Service worker message handler already exists');
+              console.log('[WARN] Service worker message handler already exists');
             }
 
             // Mark listener as active
             window.fcmListenerActive = true;
-            console.log('✅ Foreground message listener set up successfully');
+            console.log(' Foreground message listener set up successfully');
             console.log('');
-            console.log('📋 To verify listener is working:');
+            console.log(' To verify listener is working:');
             console.log('   1. Run: window.testFCMListener()');
             console.log('   2. Send a test notification');
-            console.log('   3. Look for "🔔 Foreground message received!"');
+            console.log('   3. Look for " Foreground message received!"');
             console.log('');
           } catch (error) {
-            console.error('❌ Error setting up foreground listener:', error.name, error.message);
+            console.error('[ERROR] Error setting up foreground listener:', error.name, error.message);
             console.error('Stack:', error.stack);
           }
         })()
@@ -273,36 +273,36 @@ class FCMWeb {
             // Detect browser
             const isOpera = (!!window.opr && !!opr.addons) || !!window.opera || navigator.userAgent.indexOf(' OPR/') >= 0;
             if (isOpera) {
-              console.warn('⚠️ Opera browser detected - push notifications may have issues');
+              console.warn('[WARN] Opera browser detected - push notifications may have issues');
               console.warn('Please try: 1) Check opera://settings/content/notifications 2) Disable ad blocker 3) Disable VPN');
             }
 
             // Wait for service worker to be ready
             const registration = await navigator.serviceWorker.ready;
-            console.log('✅ Service worker is ready:', registration.scope);
+            console.log(' Service worker is ready:', registration.scope);
 
             // Import Firebase libraries if not already loaded
             if (typeof firebase === 'undefined') {
-              console.error('❌ Firebase not loaded');
+              console.error('[ERROR] Firebase not loaded');
               return null;
             }
 
-            console.log('✅ Firebase SDK loaded');
+            console.log(' Firebase SDK loaded');
 
             // Get or create messaging instance (reuse global instance if it exists)
             if (!window.fcmMessaging) {
               window.fcmMessaging = firebase.messaging();
-              console.log('✅ Created new messaging instance');
+              console.log(' Created new messaging instance');
             }
             const messaging = window.fcmMessaging;
-            console.log('✅ Using messaging instance (same as listener)');
+            console.log(' Using messaging instance (same as listener)');
 
             // Check permission (do NOT request here - iOS requires user gesture)
             console.log('Notification permission:', Notification.permission);
 
             if (Notification.permission !== 'granted') {
-              console.log('❌ Notification permission not granted:', Notification.permission);
-              console.log('⚠️ Permission must be granted first via requestBrowserPermission()');
+              console.log('[ERROR] Notification permission not granted:', Notification.permission);
+              console.log('[WARN] Permission must be granted first via requestBrowserPermission()');
               return null;
             }
 
@@ -315,15 +315,15 @@ class FCMWeb {
             });
 
             if (token) {
-              console.log('✅ FCM Token obtained successfully!');
-              console.log('📋 Full FCM Token:', token);
+              console.log(' FCM Token obtained successfully!');
+              console.log(' Full FCM Token:', token);
               return token;
             } else {
-              console.log('❌ No token returned from Firebase');
+              console.log('[ERROR] No token returned from Firebase');
               return null;
             }
           } catch (error) {
-            console.error('❌ Error getting FCM token:', error.name, '-', error.message);
+            console.error('[ERROR] Error getting FCM token:', error.name, '-', error.message);
             console.error('Error details:', error);
 
             // Provide helpful error messages
@@ -354,18 +354,18 @@ class FCMWeb {
     try {
       final promise = js.context.callMethod('eval', [script]);
 
-      // Convert JS Promise to Dart Future
-      final thenFunc = js.allowInterop((result) {
+      // Convert JS Promise to Dart Future using js.allowInterop
+      void Function(dynamic) thenFunc = (result) {
         if (!completer.isCompleted) {
           completer.complete(result);
         }
-      });
+      };
 
-      final catchFunc = js.allowInterop((error) {
+      void Function(dynamic) catchFunc = (error) {
         if (!completer.isCompleted) {
           completer.completeError(error);
         }
-      });
+      };
 
       promise.callMethod('then', [thenFunc]).callMethod('catch', [catchFunc]);
     } catch (e) {
