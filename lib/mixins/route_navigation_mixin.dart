@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../directions_service.dart';
-import '../places_service.dart';
+import '../services/directions_service.dart';
+import '../services/places_service.dart';
 
 /// Mixin that provides route navigation functionality
 /// Can be used by both citizen and dispatcher dashboards

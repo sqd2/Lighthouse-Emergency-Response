@@ -19,8 +19,8 @@ import '../mixins/route_navigation_mixin.dart';
 import '../mixins/location_tracking_mixin.dart';
 import '../services/notification_service.dart';
 import '../services/medical_info_service.dart';
-import '../places_service.dart';
-import '../directions_service.dart';
+import '../services/places_service.dart';
+import '../services/directions_service.dart';
 import 'citizen_settings_screen.dart';
 
 class CitizenDashboard extends StatefulWidget {
