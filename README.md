@@ -75,7 +75,7 @@ GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 LIVEKIT_URL=wss://your-project.livekit.cloud
 ```
 
-**Server-side (`functions/.env`)** - Cloud Functions secrets:
+**Server-side (`functions/.env`)** - Cloud Functions configuration:
 
 1. Copy the example file:
 ```bash
@@ -83,7 +83,7 @@ cd functions
 cp .env.example .env
 ```
 
-2. Edit `functions/.env` with server-side secrets:
+2. Edit `functions/.env` with regular environment variables:
 ```bash
 # Email service (Resend)
 RESEND_API_KEY=your_resend_api_key_here
@@ -93,17 +93,19 @@ TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_PHONE_NUMBER=+1234567890
 
-# LiveKit (server-side secrets - NEVER expose in client!)
+# LiveKit URL (non-secret)
 LIVEKIT_URL=wss://your-project.livekit.cloud
-LIVEKIT_API_KEY=your_livekit_api_key
-LIVEKIT_API_SECRET=your_livekit_api_secret
+
+# IMPORTANT: LIVEKIT_API_KEY and LIVEKIT_API_SECRET are managed by
+# Firebase Secret Manager and should NOT be in this file.
 ```
 
 **Important:**
 - Both `.env` files are git-ignored and never committed
 - `.env.example` files provide templates for each environment
 - Client `.env` contains ONLY domain-restricted/public keys
-- Server `functions/.env` contains sensitive API secrets
+- Server `functions/.env` contains most server-side secrets
+- **LiveKit API credentials use Firebase Secret Manager** (see below)
 
 ### 2. Firebase Setup
 
@@ -135,7 +137,57 @@ service cloud.firestore {
 }
 ```
 
-### 3. Google Maps API
+### 3. Firebase Secret Manager
+
+For sensitive API credentials that should never be exposed in code or regular environment variables, we use Firebase Secret Manager.
+
+**Production Setup (Firebase Secrets):**
+
+1. Set LiveKit API credentials as secrets:
+```bash
+# Navigate to functions directory
+cd functions
+
+# Set API Key secret
+echo -n "your_livekit_api_key" | firebase functions:secrets:set LIVEKIT_API_KEY
+
+# Set API Secret secret
+echo -n "your_livekit_api_secret" | firebase functions:secrets:set LIVEKIT_API_SECRET
+```
+
+**Important:** Use `echo -n` (no trailing newline) to avoid authentication errors!
+
+2. View configured secrets:
+```bash
+firebase functions:secrets:access LIVEKIT_API_KEY
+firebase functions:secrets:access LIVEKIT_API_SECRET
+```
+
+3. Deploy functions with secrets:
+```bash
+firebase deploy --only functions
+```
+
+**Local Development Setup:**
+
+For testing Cloud Functions locally, create a `functions/.env.local` file (git-ignored):
+
+```bash
+cd functions
+cat > .env.local << EOF
+# Local development secrets - DO NOT COMMIT
+LIVEKIT_API_KEY=your_livekit_api_key
+LIVEKIT_API_SECRET=your_livekit_api_secret
+EOF
+```
+
+**How It Works:**
+- Production: Cloud Functions use `defineSecret()` to access Firebase Secret Manager
+- Local Dev: Functions automatically load from `.env.local` file
+- Secrets are never committed to version control
+- More secure than regular environment variables
+
+### 4. Google Maps API
 
 1. Enable APIs in [Google Cloud Console](https://console.cloud.google.com/):
    - Maps JavaScript API
@@ -153,7 +205,7 @@ GOOGLE_MAPS_API_KEY=your_actual_api_key_here
    - Restrict to necessary APIs only
    - Enable billing in Google Cloud Console
 
-### 4. LiveKit Configuration
+### 5. LiveKit Configuration
 
 1. Sign up at [LiveKit Cloud](https://cloud.livekit.io/)
 2. Create a new project and get your credentials
@@ -163,17 +215,24 @@ GOOGLE_MAPS_API_KEY=your_actual_api_key_here
 LIVEKIT_URL=wss://your-project.livekit.cloud
 ```
 
-4. Add **API credentials** to `functions/.env` (server-side):
+4. Add **WebSocket URL** to `functions/.env` (server-side):
 ```bash
 LIVEKIT_URL=wss://your-project.livekit.cloud
-LIVEKIT_API_KEY=your_api_key
-LIVEKIT_API_SECRET=your_api_secret
 ```
 
-**Security Note:**
-- The client app only knows the WebSocket URL
-- API Key/Secret are server-side secrets used by Cloud Functions to generate access tokens
-- This ensures credentials are never exposed in client code
+5. Add **API credentials** to Firebase Secret Manager (see Section 3):
+```bash
+cd functions
+echo -n "your_api_key" | firebase functions:secrets:set LIVEKIT_API_KEY
+echo -n "your_api_secret" | firebase functions:secrets:set LIVEKIT_API_SECRET
+```
+
+**Security Architecture:**
+- Client app: Only knows the WebSocket URL (public, safe)
+- Cloud Functions: Access API Key/Secret from Firebase Secret Manager
+- Token generation happens server-side with secured credentials
+- Credentials never exposed in client code or version control
+- Local development uses `functions/.env.local` (git-ignored)
 
 ---
 
@@ -290,12 +349,14 @@ For detailed architecture documentation with diagrams, see [ARCHITECTURE.md](ARC
    - WebRTC SRTP for encrypted media
    - Domain-restricted API keys
 
-5. **Environment Variables**
+5. **Secrets Management**
    - Separate `.env` files for client and server
    - Client `.env`: Only domain-restricted/public keys (Google Maps, LiveKit URL)
-   - Server `functions/.env`: Sensitive secrets (LiveKit API keys, Twilio, Resend)
-   - Both files git-ignored and never committed to version control
-   - Template files (`.env.example`) provided for each environment
+   - Server `functions/.env`: Regular environment variables (Twilio, Resend, LiveKit URL)
+   - **Firebase Secret Manager**: Most sensitive credentials (LiveKit API Key/Secret)
+   - Local development: `functions/.env.local` for testing (git-ignored)
+   - Production: Secrets accessed via `defineSecret()` in Cloud Functions
+   - All sensitive files git-ignored and never committed to version control
 
 ---
 
@@ -307,11 +368,28 @@ For detailed architecture documentation with diagrams, see [ARCHITECTURE.md](ARC
 # Build
 flutter build web --release
 
-# Deploy
+# Deploy hosting
 firebase deploy --only hosting
 
 # Access at: https://your-project.web.app
 ```
+
+### Cloud Functions (Backend)
+
+```bash
+# Ensure secrets are configured (one-time setup)
+cd functions
+echo -n "your_livekit_api_key" | firebase functions:secrets:set LIVEKIT_API_KEY
+echo -n "your_livekit_api_secret" | firebase functions:secrets:set LIVEKIT_API_SECRET
+
+# Deploy functions
+firebase deploy --only functions
+
+# Or deploy everything at once
+firebase deploy
+```
+
+**Note:** Cloud Functions automatically access secrets from Firebase Secret Manager in production.
 
 ### Android (Google Play)
 
