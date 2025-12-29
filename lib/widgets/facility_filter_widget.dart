@@ -19,6 +19,8 @@ class FacilityFilterWidget extends StatefulWidget {
 class _FacilityFilterWidgetState extends State<FacilityFilterWidget> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _selectedTypes = {};
+  int _filteredCount = 0;
+  bool _showNoMatches = false;
 
   // All possible facility types
   static const List<String> _allTypes = [
@@ -59,6 +61,11 @@ class _FacilityFilterWidgetState extends State<FacilityFilterWidget> {
 
       return true;
     }).toList();
+
+    setState(() {
+      _filteredCount = filtered.length;
+      _showNoMatches = searchText.isNotEmpty && filtered.isEmpty;
+    });
 
     widget.onFilteredFacilities(filtered);
   }
@@ -141,14 +148,39 @@ class _FacilityFilterWidgetState extends State<FacilityFilterWidget> {
 
           const SizedBox(height: 8),
 
-          // Result count
-          Text(
-            '${widget.allFacilities.where((f) => _selectedTypes.contains(f.type)).length} facilities',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+          // Result count or no matches message
+          if (_showNoMatches)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange[300]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No facilities found matching "${_searchController.text}"',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange[900],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Text(
+              '$_filteredCount facilities',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
             ),
-          ),
         ],
       ),
     );

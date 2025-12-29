@@ -152,6 +152,12 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
+    // Two-factor authentication session tracking
+    match /twoFactorSessions/{userId} {
+      // Users can read and write their own 2FA session status
+      allow read, write: if isOwner(userId);
+    }
+
     // Root-level match for collectionGroup queries on calls
     // This allows querying calls across all emergency alerts
     match /{path=**}/calls/{callId} {
