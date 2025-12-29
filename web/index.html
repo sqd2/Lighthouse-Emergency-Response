@@ -395,42 +395,73 @@
 
   <!-- LiveKit Media Track Cleanup Helper for PWA -->
   <script>
+    // Track all active MediaStreams globally
+    window._activeMediaStreams = window._activeMediaStreams || new Set();
+
+    // Intercept getUserMedia to track all streams
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = function(constraints) {
+        console.log('[MediaCleanup] getUserMedia called, tracking stream');
+        return originalGetUserMedia(constraints).then(function(stream) {
+          window._activeMediaStreams.add(stream);
+          console.log('[MediaCleanup] Stream added to tracking. Total active:', window._activeMediaStreams.size);
+          return stream;
+        });
+      };
+    }
+
     // Global function to force stop all active media tracks
     window.forceStopAllMediaTracks = function() {
       console.log('[MediaCleanup] Force stopping all active media tracks');
+      let totalStopped = 0;
 
       try {
-        // Stop all MediaStreamTrack instances
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          console.log('[MediaCleanup] Attempting to stop all tracks...');
-
-          // Get all video elements and stop their tracks
-          document.querySelectorAll('video').forEach(function(video) {
-            if (video.srcObject) {
-              console.log('[MediaCleanup] Found video element with srcObject');
-              video.srcObject.getTracks().forEach(function(track) {
-                console.log('[MediaCleanup] Stopping track:', track.kind, track.label);
-                track.stop();
-              });
-              video.srcObject = null;
-            }
+        // STEP 1: Stop all tracked streams from getUserMedia
+        console.log('[MediaCleanup] Stopping tracked streams:', window._activeMediaStreams.size);
+        window._activeMediaStreams.forEach(function(stream) {
+          stream.getTracks().forEach(function(track) {
+            console.log('[MediaCleanup] Stopping tracked track:', track.kind, track.label, 'state:', track.readyState);
+            track.stop();
+            totalStopped++;
           });
+        });
+        window._activeMediaStreams.clear();
 
-          // Get all audio elements and stop their tracks
-          document.querySelectorAll('audio').forEach(function(audio) {
-            if (audio.srcObject) {
-              console.log('[MediaCleanup] Found audio element with srcObject');
-              audio.srcObject.getTracks().forEach(function(track) {
-                console.log('[MediaCleanup] Stopping track:', track.kind, track.label);
+        // STEP 2: Stop all tracks attached to video elements
+        document.querySelectorAll('video').forEach(function(video) {
+          if (video.srcObject) {
+            console.log('[MediaCleanup] Found video element with srcObject');
+            video.srcObject.getTracks().forEach(function(track) {
+              if (track.readyState !== 'ended') {
+                console.log('[MediaCleanup] Stopping video track:', track.kind, track.label);
                 track.stop();
-              });
-              audio.srcObject = null;
-            }
-          });
+                totalStopped++;
+              }
+            });
+            video.srcObject = null;
+            video.load(); // Force video element to release resources
+          }
+        });
 
-          console.log('[MediaCleanup]  All media tracks stopped');
-          return true;
-        }
+        // STEP 3: Stop all tracks attached to audio elements
+        document.querySelectorAll('audio').forEach(function(audio) {
+          if (audio.srcObject) {
+            console.log('[MediaCleanup] Found audio element with srcObject');
+            audio.srcObject.getTracks().forEach(function(track) {
+              if (track.readyState !== 'ended') {
+                console.log('[MediaCleanup] Stopping audio track:', track.kind, track.label);
+                track.stop();
+                totalStopped++;
+              }
+            });
+            audio.srcObject = null;
+            audio.load(); // Force audio element to release resources
+          }
+        });
+
+        console.log('[MediaCleanup] Total tracks stopped:', totalStopped);
+        return true;
       } catch (e) {
         console.error('[MediaCleanup] Error stopping media tracks:', e);
         return false;

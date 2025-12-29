@@ -117,6 +117,7 @@ class LiveKitService extends ChangeNotifier {
         'callerName': callerName,
         'callerEmail': callerEmail,
         'callerRole': callerRole,
+        'receiverName': receiverName,
         'type': type,
         'status': Call.STATUS_RINGING,
         'startedAt': FieldValue.serverTimestamp(),
@@ -127,17 +128,20 @@ class LiveKitService extends ChangeNotifier {
       // Listen to call status updates
       _listenToCallUpdates(alertId, callRef.id);
 
-      return Call(
+      final call = Call(
         id: callRef.id,
         roomName: roomName,
         callerId: user.uid,
         receiverId: receiverId,
         callerName: callerName,
+        receiverName: receiverName,
         callerRole: callerRole,
         type: type,
         status: Call.STATUS_RINGING,
         startedAt: DateTime.now(),
       );
+
+      return call;
     } catch (e) {
       debugPrint('[LiveKitService] Error initiating call: $e');
       return null;
@@ -148,6 +152,9 @@ class LiveKitService extends ChangeNotifier {
   Future<bool> acceptCall(String alertId, Call call) async {
     try {
       debugPrint('[LiveKitService] Accepting call: ${call.id}');
+
+      // Listen to call status updates
+      _listenToCallUpdates(alertId, call.id);
 
       // Update call status to connecting
       await FirebaseFirestore.instance
@@ -217,12 +224,16 @@ class LiveKitService extends ChangeNotifier {
       debugPrint('[LiveKitService] Joining room: ${call.roomName}');
 
       // Get LiveKit token from Cloud Function
+      final t1 = DateTime.now();
+      debugPrint('[LiveKitService] Calling Cloud Function to get token...');
       final functions = FirebaseFunctions.instance;
       final result = await functions.httpsCallable('generateLiveKitToken').call({
         'alertId': alertId,
         'callId': call.id,
         'roomName': call.roomName,
       });
+      final tokenCallDuration = DateTime.now().difference(t1).inMilliseconds;
+      debugPrint('[LiveKitService] Cloud Function call took ${tokenCallDuration}ms');
 
       final token = result.data['token'] as String;
       final serverUrl = result.data['serverUrl'] as String;
@@ -275,7 +286,10 @@ class LiveKitService extends ChangeNotifier {
 
       // Publish video only for video calls
       if (callType == Call.TYPE_VIDEO) {
+        _isVideoEnabled = true;
         await _room?.localParticipant?.setCameraEnabled(true);
+      } else {
+        _isVideoEnabled = false;
       }
 
       // Get local tracks
@@ -367,20 +381,78 @@ class LiveKitService extends ChangeNotifier {
 
   /// Toggle video on/off
   Future<void> toggleVideo() async {
-    _isVideoEnabled = !_isVideoEnabled;
-    await _room?.localParticipant?.setCameraEnabled(_isVideoEnabled);
-    notifyListeners();
-    debugPrint('[LiveKitService] Video ${_isVideoEnabled ? "enabled" : "disabled"}');
+    try {
+      debugPrint('[LiveKitService] Toggling video from ${_isVideoEnabled ? "on" : "off"} to ${!_isVideoEnabled ? "on" : "off"}');
+
+      if (_room?.localParticipant == null) {
+        debugPrint('[LiveKitService] Cannot toggle video - no local participant');
+        return;
+      }
+
+      if (_isVideoEnabled) {
+        // Disabling video - unpublish and stop the camera completely
+        debugPrint('[LiveKitService] Disabling video - unpublishing all video tracks');
+
+        // Stop and dispose local video track first
+        if (_localVideoTrack != null) {
+          try {
+            await _localVideoTrack!.stop();
+            await _localVideoTrack!.dispose();
+          } catch (e) {
+            debugPrint('[LiveKitService] Error disposing video track: $e');
+          }
+        }
+
+        // Disable camera which should unpublish the track
+        await _room!.localParticipant!.setCameraEnabled(false);
+
+        // Give time for track to be unpublished
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        _localVideoTrack = null;
+        _isVideoEnabled = false;
+        debugPrint('[LiveKitService] Video disabled and unpublished');
+      } else {
+        // Enabling video - create and publish new track
+        debugPrint('[LiveKitService] Enabling video - starting camera');
+        _isVideoEnabled = true;
+        notifyListeners(); // Update UI immediately
+
+        await _room!.localParticipant!.setCameraEnabled(true);
+
+        // Wait for track to be created and published
+        for (int i = 0; i < 10; i++) {
+          await Future.delayed(const Duration(milliseconds: 200));
+          _localVideoTrack = _room?.localParticipant?.videoTrackPublications.firstOrNull?.track as LocalVideoTrack?;
+
+          if (_localVideoTrack != null) {
+            debugPrint('[LiveKitService] Video track found after ${(i + 1) * 200}ms');
+            notifyListeners();
+            break;
+          }
+        }
+
+        if (_localVideoTrack == null) {
+          debugPrint('[LiveKitService] WARNING: Video track not found after 2 seconds');
+        }
+      }
+
+      notifyListeners();
+      debugPrint('[LiveKitService] Video toggled to ${_isVideoEnabled ? "enabled" : "disabled"}, track: ${_localVideoTrack != null ? "found" : "null"}');
+    } catch (e) {
+      debugPrint('[LiveKitService] Error toggling video: $e');
+      // Revert state on error
+      _isVideoEnabled = !_isVideoEnabled;
+      notifyListeners();
+    }
   }
 
   /// Switch camera (front/back)
   Future<void> switchCamera() async {
     try {
-      // Note: Camera switching API varies by platform
-      // For web, camera switching needs to be handled differently
-      // This is a placeholder for future implementation
-      debugPrint('[LiveKitService] Camera switch requested (not fully implemented for web)');
-      notifyListeners();
+      debugPrint('[LiveKitService] Camera switching not supported on web browsers');
+      // Camera switching requires native mobile APIs
+      // On web, the user's default camera is used
     } catch (e) {
       debugPrint('[LiveKitService] Error switching camera: $e');
     }
@@ -563,6 +635,14 @@ class LiveKitService extends ChangeNotifier {
         _currentCall = call;
         _callStateController.add(call);
         notifyListeners();
+
+        // Auto-disconnect if call ended by other party
+        if ((call.status == Call.STATUS_ENDED || call.status == Call.STATUS_REJECTED) &&
+            call.endedAt != null &&
+            _room != null) {
+          debugPrint('[LiveKitService] Call ended remotely, disconnecting from room');
+          _disconnectRoom();
+        }
       }
     });
   }

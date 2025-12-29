@@ -203,13 +203,13 @@ class AnalyticsService {
     }
   }
 
-  /// Get count of active dispatchers (users with role=dispatcher and activeStatus=true)
+  /// Get count of active dispatchers (users with role=dispatcher and isActive=true)
   Future<int> getActiveDispatchersCount() async {
     try {
       final query = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'dispatcher')
-          .where('activeStatus', isEqualTo: true)
+          .where('isActive', isEqualTo: true)
           .get();
 
       return query.docs.length;
