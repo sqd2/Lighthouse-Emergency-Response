@@ -80,11 +80,12 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             );
             setState(() => _isLoading = false);
+            // Sign out since 2FA is misconfigured
+            await _auth.signOut();
             return;
           }
 
-          // Sign out temporarily for 2FA verification
-          await _auth.signOut();
+          // Keep user signed in but verify 2FA
           setState(() => _isLoading = false);
 
           // Verify 2FA
@@ -95,14 +96,12 @@ class _LoginScreenState extends State<LoginScreen> {
           );
 
           if (verified) {
-            // Re-authenticate after successful 2FA
-            setState(() => _isLoading = true);
-            await _auth.signInWithEmailAndPassword(
-              email: _emailController.text.trim(),
-              password: _passwordController.text.trim(),
-            );
-            // Login successful - AuthGate will handle navigation
+            // 2FA verified - user is already signed in, AuthGate will handle navigation
+            if (!mounted) return;
+            // Navigation will happen automatically via AuthGate
           } else {
+            // 2FA failed - sign out the user
+            await _auth.signOut();
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
