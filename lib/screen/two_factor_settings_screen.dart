@@ -79,9 +79,15 @@ class _TwoFactorSettingsScreenState extends State<TwoFactorSettingsScreen> {
         verified = await _showTOTPSetupDialog(totpSecret);
       } else if (method == 'email') {
         // Send verification code to email and verify
+        if (_userEmail == null) {
+          throw Exception('Email not found. Please update your profile.');
+        }
         verified = await _sendAndVerifyCode('email', _userEmail!);
       } else if (method == 'sms') {
         // Send verification code to phone and verify
+        if (_userPhone == null) {
+          throw Exception('Phone number not found. Please update your profile.');
+        }
         verified = await _sendAndVerifyCode('sms', _userPhone!);
       }
 
@@ -182,7 +188,8 @@ class _TwoFactorSettingsScreenState extends State<TwoFactorSettingsScreen> {
   }
 
   Future<bool> _showTOTPSetupDialog(String secret) async {
-    final otpAuthURL = _twoFactorService.generateOTPAuthURL(_userEmail!, secret);
+    final email = _userEmail ?? 'user@example.com'; // Fallback if email is null
+    final otpAuthURL = _twoFactorService.generateOTPAuthURL(email, secret);
     final codeController = TextEditingController();
 
     final result = await showDialog<bool>(
