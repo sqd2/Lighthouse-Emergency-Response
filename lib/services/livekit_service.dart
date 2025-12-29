@@ -209,11 +209,14 @@ class LiveKitService extends ChangeNotifier {
       });
 
       final token = result.data['token'] as String;
+      final serverUrl = result.data['serverUrl'] as String;
+
+      debugPrint('[LiveKitService] Token received, connecting to: $serverUrl');
 
       // Create room instance
       _room = Room();
       await _room!.connect(
-        LiveKitConfig.serverUrl,
+        serverUrl,
         token,
         roomOptions: const RoomOptions(
           adaptiveStream: true,
