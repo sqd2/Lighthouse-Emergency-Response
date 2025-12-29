@@ -187,7 +187,35 @@ EOF
 - Secrets are never committed to version control
 - More secure than regular environment variables
 
-### 4. Google Maps API
+### 4. Twilio Configuration (SMS for 2FA)
+
+1. Sign up at [Twilio Console](https://www.twilio.com/console)
+2. Get a phone number with SMS capabilities
+3. Find your Account SID and Auth Token in the dashboard
+
+4. Add credentials to `functions/.env`:
+```bash
+TWILIO_ACCOUNT_SID=your_account_sid_here
+TWILIO_AUTH_TOKEN=your_auth_token_here
+TWILIO_PHONE_NUMBER=+1234567890
+```
+
+**Used for:** Sending SMS verification codes during two-factor authentication
+
+### 5. Resend Configuration (Email for 2FA)
+
+1. Sign up at [Resend](https://resend.com/)
+2. Create an API key in the dashboard
+3. Verify your sending domain (or use their test domain for development)
+
+4. Add API key to `functions/.env`:
+```bash
+RESEND_API_KEY=your_resend_api_key_here
+```
+
+**Used for:** Sending email verification codes during two-factor authentication
+
+### 6. Google Maps API
 
 1. Enable APIs in [Google Cloud Console](https://console.cloud.google.com/):
    - Maps JavaScript API
@@ -205,7 +233,7 @@ GOOGLE_MAPS_API_KEY=your_actual_api_key_here
    - Restrict to necessary APIs only
    - Enable billing in Google Cloud Console
 
-### 5. LiveKit Configuration
+### 7. LiveKit Configuration
 
 1. Sign up at [LiveKit Cloud](https://cloud.livekit.io/)
 2. Create a new project and get your credentials
