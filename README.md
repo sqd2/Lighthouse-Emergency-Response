@@ -57,30 +57,53 @@ flutter run -d chrome
 
 ### 1. Environment Variables
 
-The application uses a `.env` file to manage API keys and configuration. This keeps sensitive information out of version control.
+The application uses **two separate `.env` files** for client-side and server-side configuration:
 
-**Setup:**
+**Client-side (Root `.env`)** - Flutter app configuration:
 
 1. Copy the example file:
 ```bash
 cp .env.example .env
 ```
 
-2. Edit `.env` and add your actual API keys:
+2. Edit `.env` with client-safe API keys:
 ```bash
-# Google Maps API Key
+# Google Maps API Key (domain-restricted)
 GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 
-# LiveKit Configuration
+# LiveKit WebSocket URL (public, safe to expose)
 LIVEKIT_URL=wss://your-project.livekit.cloud
-LIVEKIT_API_KEY=your_livekit_api_key_here
-LIVEKIT_API_SECRET=your_livekit_api_secret_here
+```
+
+**Server-side (`functions/.env`)** - Cloud Functions secrets:
+
+1. Copy the example file:
+```bash
+cd functions
+cp .env.example .env
+```
+
+2. Edit `functions/.env` with server-side secrets:
+```bash
+# Email service (Resend)
+RESEND_API_KEY=your_resend_api_key_here
+
+# SMS service (Twilio)
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_PHONE_NUMBER=+1234567890
+
+# LiveKit (server-side secrets - NEVER expose in client!)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_livekit_api_key
+LIVEKIT_API_SECRET=your_livekit_api_secret
 ```
 
 **Important:**
-- The `.env` file is git-ignored and never committed to version control
-- `.env.example` provides a template showing which keys are needed
-- Default values are provided as fallback, but should be replaced with your own keys for production
+- Both `.env` files are git-ignored and never committed
+- `.env.example` files provide templates for each environment
+- Client `.env` contains ONLY domain-restricted/public keys
+- Server `functions/.env` contains sensitive API secrets
 
 ### 2. Firebase Setup
 
@@ -133,15 +156,24 @@ GOOGLE_MAPS_API_KEY=your_actual_api_key_here
 ### 4. LiveKit Configuration
 
 1. Sign up at [LiveKit Cloud](https://cloud.livekit.io/)
-2. Create a new project
-3. Add your LiveKit credentials to `.env`:
+2. Create a new project and get your credentials
+
+3. Add **WebSocket URL** to root `.env` (client-side):
+```bash
+LIVEKIT_URL=wss://your-project.livekit.cloud
+```
+
+4. Add **API credentials** to `functions/.env` (server-side):
 ```bash
 LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_api_secret
 ```
 
-**Note:** LiveKit API credentials in `.env` are used by Cloud Functions for generating access tokens. The client app only needs the `LIVEKIT_URL`.
+**Security Note:**
+- The client app only knows the WebSocket URL
+- API Key/Secret are server-side secrets used by Cloud Functions to generate access tokens
+- This ensures credentials are never exposed in client code
 
 ---
 
@@ -259,10 +291,11 @@ For detailed architecture documentation with diagrams, see [ARCHITECTURE.md](ARC
    - Domain-restricted API keys
 
 5. **Environment Variables**
-   - API keys stored in `.env` file (git-ignored)
-   - Never committed to version control
-   - Template provided via `.env.example`
-   - Server-side secrets in Firebase Functions environment
+   - Separate `.env` files for client and server
+   - Client `.env`: Only domain-restricted/public keys (Google Maps, LiveKit URL)
+   - Server `functions/.env`: Sensitive secrets (LiveKit API keys, Twilio, Resend)
+   - Both files git-ignored and never committed to version control
+   - Template files (`.env.example`) provided for each environment
 
 ---
 

@@ -12,10 +12,16 @@ const {onCall} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const {AccessToken} = require("livekit-server-sdk");
 
-// LiveKit WebRTC configuration
-const LIVEKIT_URL = "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud";
-const LIVEKIT_API_KEY = "LIVEKIT_API_KEY";
-const LIVEKIT_API_SECRET = "LIVEKIT_API_SECRET";
+// LiveKit WebRTC configuration - loaded from environment variables
+const LIVEKIT_URL = process.env.LIVEKIT_URL || "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud";
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+
+// Validate environment variables are set
+if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+  console.error("[ERROR] LiveKit credentials not found in environment variables!");
+  console.error("Please set LIVEKIT_API_KEY and LIVEKIT_API_SECRET in functions/.env");
+}
 
 /**
  * Cloud Function: Generate LiveKit access token for WebRTC calls
@@ -103,7 +109,7 @@ exports.generateLiveKitToken = onCall(async (request) => {
 
     return {
       token: token,
-      serverUrl: "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud",
+      serverUrl: LIVEKIT_URL,
     };
   } catch (error) {
     console.error("[ERROR] Error generating LiveKit token:", error);
