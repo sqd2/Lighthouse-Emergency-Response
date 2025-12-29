@@ -343,157 +343,273 @@ graph TB
 
 ## Use Case Diagram
 
-### Complete System Use Cases
+### System Actors
 
 ```mermaid
-graph TB
-    subgraph "Actors"
-        Citizen((Citizen<br/>User))
-        Dispatcher((Dispatcher<br/>User))
-        System((System<br/>Automated))
-    end
+graph LR
+    Citizen((Citizen<br/>User))
+    Dispatcher((Dispatcher<br/>User))
+    System((System<br/>Automated))
 
-    subgraph "Authentication Use Cases"
-        UC1[Register Account]
-        UC2[Login with Email/Password]
-        UC3[Enable Two-Factor Auth<br/>TOTP or Email]
-        UC4[Verify 2FA Code]
-        UC5[Logout]
-    end
+    style Citizen fill:#4285F4,color:#fff
+    style Dispatcher fill:#9C27B0,color:#fff
+    style System fill:#34A853,color:#fff
+```
 
-    subgraph "Citizen Emergency Use Cases"
-        UC6[Create Emergency Alert<br/>Select Services]
-        UC7[Add Alert Description<br/>Upload Photos/Videos]
-        UC8[Track Alert Status<br/>Real-time Updates]
-        UC9[Receive Incoming Call<br/>from Dispatcher]
-        UC10[Chat with Dispatcher<br/>Real-time Messages]
-        UC11[View Dispatcher Location<br/>Track on Map]
-        UC12[Cancel Emergency Alert]
-        UC13[View Alert History<br/>Past Emergencies]
-    end
+**Actor Descriptions:**
+- **Citizen User**: End-user who creates emergency alerts and interacts with dispatchers
+- **Dispatcher User**: Emergency response personnel who manage and respond to alerts
+- **System (Automated)**: Backend processes that handle notifications, encryption, tokens, and analytics
 
-    subgraph "Citizen Medical & Profile Use Cases"
-        UC14[Add Medical Information<br/>Blood Type, Allergies]
-        UC15[Update Medical Info<br/>Encrypted Storage]
-        UC16[View Medical Info<br/>Decrypt & Display]
-        UC17[Update Profile<br/>Name, Phone, Email]
-        UC18[Change Password]
-        UC19[Configure 2FA Settings]
-    end
+---
 
-    subgraph "Citizen Location & Navigation Use Cases"
-        UC20[Search for Facilities<br/>Hospitals, Police, Fire]
-        UC21[View Facility Details<br/>Address, Phone, Hours]
-        UC22[Navigate to Facility<br/>Google Maps Route]
-        UC23[View Current Location<br/>GPS Tracking]
-    end
+### 1. Authentication & User Management Use Cases
 
-    subgraph "Dispatcher Alert Management Use Cases"
-        UC24[View Emergency Alerts<br/>Real-time Feed]
-        UC25[Accept Emergency Alert<br/>Assign to Self]
-        UC26[View Alert Details<br/>Location, Services, Photos]
-        UC27[View Citizen Medical Info<br/>Encrypted Access]
-        UC28[Initiate Call to Citizen<br/>Video/Audio]
-        UC29[Chat with Citizen<br/>Real-time Messages]
-        UC30[Mark Alert as Arrived<br/>On-site Arrival]
-        UC31[Mark Alert as Resolved<br/>Add Resolution Notes]
-        UC32[View Alert History<br/>All Past Alerts]
-    end
+```mermaid
+graph LR
+    Citizen((Citizen))
+    Dispatcher((Dispatcher))
 
-    subgraph "Dispatcher Analytics & Facilities Use Cases"
-        UC33[View Analytics Dashboard<br/>Metrics & Charts]
-        UC34[View Total Alerts<br/>Time Period Filter]
-        UC35[View Response Times<br/>Average Calculation]
-        UC36[View Success Rate<br/>Percentage Stats]
-        UC37[View Top Dispatchers<br/>Leaderboard]
-        UC38[Add Facility Pin<br/>Manual Entry]
-        UC39[View Facilities on Map<br/>All Emergency Facilities]
-    end
+    UC1[Register Account]
+    UC2[Login]
+    UC3[Enable 2FA]
+    UC4[Verify 2FA Code]
+    UC5[Logout]
+    UC17[Update Profile]
+    UC18[Change Password]
 
-    subgraph "WebRTC Call Use Cases"
-        UC40[Start Video/Audio Call]
-        UC41[Accept Incoming Call]
-        UC42[Decline Incoming Call]
-        UC43[Toggle Mute/Unmute<br/>Audio Control]
-        UC44[Toggle Video On/Off<br/>Camera Control]
-        UC45[End Active Call]
-    end
-
-    subgraph "System Automated Use Cases"
-        UC46[Send FCM Push Notification<br/>New Alert to Dispatchers]
-        UC47[Generate LiveKit Token<br/>JWT for WebRTC]
-        UC48[Send 2FA Email Code<br/>via Resend API]
-        UC49[Send 2FA SMS Code<br/>via Twilio API]
-        UC50[Encrypt Medical Data<br/>AES-256-CBC]
-        UC51[Decrypt Medical Data<br/>User-specific Key]
-        UC52[Calculate Real-time ETA<br/>Dispatcher to Citizen]
-        UC53[Sync Location Updates<br/>Real-time GPS]
-        UC54[Aggregate Analytics Data<br/>Daily/Weekly/Monthly]
-        UC55[Enforce Security Rules<br/>Firestore RBAC]
-    end
-
-    %% Citizen to Use Cases
     Citizen --> UC1
     Citizen --> UC2
     Citizen --> UC3
     Citizen --> UC4
     Citizen --> UC5
+    Citizen --> UC17
+    Citizen --> UC18
+
+    Dispatcher --> UC1
+    Dispatcher --> UC2
+    Dispatcher --> UC3
+    Dispatcher --> UC4
+    Dispatcher --> UC5
+    Dispatcher --> UC17
+    Dispatcher --> UC18
+
+    UC3 -.->|triggers| SendEmail[System: Send 2FA Email]
+    UC3 -.->|triggers| SendSMS[System: Send 2FA SMS]
+    UC4 -.->|verifies| SendEmail
+    UC4 -.->|verifies| SendSMS
+
+    style Citizen fill:#4285F4,color:#fff
+    style Dispatcher fill:#9C27B0,color:#fff
+    style UC1 fill:#f9f9f9
+    style UC2 fill:#f9f9f9
+    style UC3 fill:#f9f9f9
+    style UC4 fill:#f9f9f9
+    style UC5 fill:#f9f9f9
+    style UC17 fill:#f9f9f9
+    style UC18 fill:#f9f9f9
+    style SendEmail fill:#34A853,color:#fff
+    style SendSMS fill:#34A853,color:#fff
+```
+
+---
+
+### 2. Citizen Emergency Alert Use Cases
+
+```mermaid
+graph TB
+    Citizen((Citizen))
+
+    UC6[Create Emergency Alert]
+    UC7[Add Description & Media]
+    UC8[Track Alert Status]
+    UC11[View Dispatcher Location]
+    UC12[Cancel Alert]
+    UC13[View Alert History]
 
     Citizen --> UC6
     Citizen --> UC7
     Citizen --> UC8
-    Citizen --> UC9
-    Citizen --> UC10
     Citizen --> UC11
     Citizen --> UC12
     Citizen --> UC13
 
+    UC6 -.->|requires| GPS[System: GPS Tracking]
+    UC6 -.->|triggers| Notify[System: Send FCM Notification]
+    UC7 -.->|extends| UC6
+    UC11 -.->|requires| Sync[System: Sync Location Updates]
+
+    style Citizen fill:#4285F4,color:#fff
+    style UC6 fill:#EA4335,color:#fff
+    style UC7 fill:#f9f9f9
+    style UC8 fill:#f9f9f9
+    style UC11 fill:#f9f9f9
+    style UC12 fill:#f9f9f9
+    style UC13 fill:#f9f9f9
+    style GPS fill:#34A853,color:#fff
+    style Notify fill:#34A853,color:#fff
+    style Sync fill:#34A853,color:#fff
+```
+
+---
+
+### 3. Citizen Medical Information Use Cases
+
+```mermaid
+graph LR
+    Citizen((Citizen))
+
+    UC14[Add Medical Info]
+    UC15[Update Medical Info]
+    UC16[View Medical Info]
+
     Citizen --> UC14
     Citizen --> UC15
     Citizen --> UC16
-    Citizen --> UC17
-    Citizen --> UC18
-    Citizen --> UC19
+
+    UC14 -.->|requires| Encrypt[System: Encrypt Medical Data<br/>AES-256-CBC]
+    UC15 -.->|requires| Encrypt
+    UC16 -.->|requires| Decrypt[System: Decrypt Medical Data]
+
+    style Citizen fill:#4285F4,color:#fff
+    style UC14 fill:#f9f9f9
+    style UC15 fill:#f9f9f9
+    style UC16 fill:#f9f9f9
+    style Encrypt fill:#34A853,color:#fff
+    style Decrypt fill:#34A853,color:#fff
+```
+
+---
+
+### 4. Citizen Location & Facility Use Cases
+
+```mermaid
+graph LR
+    Citizen((Citizen))
+
+    UC20[Search for Facilities]
+    UC21[View Facility Details]
+    UC22[Navigate to Facility]
+    UC23[View Current Location]
 
     Citizen --> UC20
     Citizen --> UC21
     Citizen --> UC22
     Citizen --> UC23
 
-    Citizen --> UC41
-    Citizen --> UC42
-    Citizen --> UC43
-    Citizen --> UC44
-    Citizen --> UC45
+    UC20 -.->|uses| Places[Google Places API]
+    UC22 -.->|uses| Directions[Google Directions API]
+    UC23 -.->|uses| GPS[GPS Service]
 
-    %% Dispatcher to Use Cases
-    Dispatcher --> UC1
-    Dispatcher --> UC2
-    Dispatcher --> UC3
-    Dispatcher --> UC4
-    Dispatcher --> UC5
+    style Citizen fill:#4285F4,color:#fff
+    style UC20 fill:#f9f9f9
+    style UC21 fill:#f9f9f9
+    style UC22 fill:#f9f9f9
+    style UC23 fill:#f9f9f9
+    style Places fill:#FBBC04,color:#000
+    style Directions fill:#FBBC04,color:#000
+    style GPS fill:#34A853,color:#fff
+```
+
+---
+
+### 5. Dispatcher Alert Management Use Cases
+
+```mermaid
+graph TB
+    Dispatcher((Dispatcher))
+
+    UC24[View Emergency Alerts Feed]
+    UC25[Accept Emergency Alert]
+    UC26[View Alert Details]
+    UC27[View Citizen Medical Info]
+    UC30[Mark as Arrived]
+    UC31[Mark as Resolved]
+    UC32[View Alert History]
 
     Dispatcher --> UC24
     Dispatcher --> UC25
     Dispatcher --> UC26
     Dispatcher --> UC27
-    Dispatcher --> UC28
-    Dispatcher --> UC29
     Dispatcher --> UC30
     Dispatcher --> UC31
     Dispatcher --> UC32
 
+    UC25 -.->|triggers| Sync[System: Sync Location Updates]
+    UC27 -.->|requires| Decrypt[System: Decrypt Medical Data]
+    UC31 -.->|includes| AddNotes[Add Resolution Notes]
+
+    style Dispatcher fill:#9C27B0,color:#fff
+    style UC24 fill:#f9f9f9
+    style UC25 fill:#FBBC04,color:#000
+    style UC26 fill:#f9f9f9
+    style UC27 fill:#f9f9f9
+    style UC30 fill:#f9f9f9
+    style UC31 fill:#f9f9f9
+    style UC32 fill:#f9f9f9
+    style Sync fill:#34A853,color:#fff
+    style Decrypt fill:#34A853,color:#fff
+    style AddNotes fill:#f9f9f9
+```
+
+---
+
+### 6. Dispatcher Analytics & Facility Management Use Cases
+
+```mermaid
+graph LR
+    Dispatcher((Dispatcher))
+
+    UC33[View Analytics Dashboard]
+    UC34[View Total Alerts]
+    UC35[View Response Times]
+    UC36[View Success Rate]
+    UC37[View Top Dispatchers]
+    UC38[Add Facility Pin]
+    UC39[View Facilities on Map]
+
     Dispatcher --> UC33
-    Dispatcher --> UC34
-    Dispatcher --> UC35
-    Dispatcher --> UC36
-    Dispatcher --> UC37
     Dispatcher --> UC38
     Dispatcher --> UC39
 
-    Dispatcher --> UC17
-    Dispatcher --> UC18
-    Dispatcher --> UC19
+    UC33 --> UC34
+    UC33 --> UC35
+    UC33 --> UC36
+    UC33 --> UC37
+
+    UC34 -.->|uses| Analytics[System: Aggregate Analytics]
+    UC35 -.->|uses| Analytics
+    UC36 -.->|uses| Analytics
+    UC37 -.->|uses| Analytics
+
+    style Dispatcher fill:#9C27B0,color:#fff
+    style UC33 fill:#FBBC04,color:#000
+    style UC34 fill:#f9f9f9
+    style UC35 fill:#f9f9f9
+    style UC36 fill:#f9f9f9
+    style UC37 fill:#f9f9f9
+    style UC38 fill:#f9f9f9
+    style UC39 fill:#f9f9f9
+    style Analytics fill:#34A853,color:#fff
+```
+
+---
+
+### 7. WebRTC Video/Audio Call Use Cases
+
+```mermaid
+graph TB
+    Citizen((Citizen))
+    Dispatcher((Dispatcher))
+
+    UC40[Start Call]
+    UC41[Accept Call]
+    UC42[Decline Call]
+    UC43[Toggle Mute]
+    UC44[Toggle Video]
+    UC45[End Call]
+    UC9[Receive Incoming Call]
+    UC10[Chat with Other Party]
 
     Dispatcher --> UC40
     Dispatcher --> UC41
@@ -501,8 +617,52 @@ graph TB
     Dispatcher --> UC43
     Dispatcher --> UC44
     Dispatcher --> UC45
+    Dispatcher --> UC10
 
-    %% System to Use Cases
+    Citizen --> UC9
+    Citizen --> UC41
+    Citizen --> UC42
+    Citizen --> UC43
+    Citizen --> UC44
+    Citizen --> UC45
+    Citizen --> UC10
+
+    UC40 -.->|requires| Token[System: Generate LiveKit Token]
+    UC9 -.->|requires| Token
+    UC40 -.->|creates| UC9
+
+    style Citizen fill:#4285F4,color:#fff
+    style Dispatcher fill:#9C27B0,color:#fff
+    style UC40 fill:#00D4AA,color:#fff
+    style UC41 fill:#f9f9f9
+    style UC42 fill:#f9f9f9
+    style UC43 fill:#f9f9f9
+    style UC44 fill:#f9f9f9
+    style UC45 fill:#f9f9f9
+    style UC9 fill:#00D4AA,color:#fff
+    style UC10 fill:#f9f9f9
+    style Token fill:#34A853,color:#fff
+```
+
+---
+
+### 8. System Automated Use Cases
+
+```mermaid
+graph TB
+    System((System<br/>Automated))
+
+    UC46[Send FCM Push Notification]
+    UC47[Generate LiveKit Token]
+    UC48[Send 2FA Email Code]
+    UC49[Send 2FA SMS Code]
+    UC50[Encrypt Medical Data]
+    UC51[Decrypt Medical Data]
+    UC52[Calculate Real-time ETA]
+    UC53[Sync Location Updates]
+    UC54[Aggregate Analytics Data]
+    UC55[Enforce Security Rules]
+
     System --> UC46
     System --> UC47
     System --> UC48
@@ -514,34 +674,31 @@ graph TB
     System --> UC54
     System --> UC55
 
-    %% Use Case Dependencies (extends/includes)
-    UC6 -.->|requires| UC23
-    UC6 -.->|triggers| UC46
-    UC7 -.->|extends| UC6
-    UC9 -.->|requires| UC47
-    UC14 -.->|requires| UC50
-    UC16 -.->|requires| UC51
-    UC25 -.->|triggers| UC53
-    UC27 -.->|requires| UC51
-    UC28 -.->|requires| UC47
-    UC28 -.->|creates| UC9
-    UC40 -.->|requires| UC47
-    UC3 -.->|triggers| UC48
-    UC3 -.->|triggers| UC49
-    UC4 -.->|verifies| UC48
-    UC4 -.->|verifies| UC49
+    UC47 -.->|uses| LiveKit[LiveKit Cloud API]
+    UC48 -.->|uses| Resend[Resend Email API]
+    UC49 -.->|uses| Twilio[Twilio SMS API]
+    UC50 -.->|uses| AES[AES-256-CBC Encryption]
+    UC51 -.->|uses| AES
+    UC52 -.->|uses| Directions[Google Directions API]
+    UC55 -.->|uses| Firestore[Firestore Security Rules]
 
-    %% Styling
-    style Citizen fill:#4285F4
-    style Dispatcher fill:#9C27B0
-    style System fill:#34A853
-
-    style UC6 fill:#EA4335
-    style UC25 fill:#FBBC04
-    style UC28 fill:#00D4AA
-    style UC40 fill:#00D4AA
-    style UC47 fill:#34A853
-    style UC50 fill:#34A853
+    style System fill:#34A853,color:#fff
+    style UC46 fill:#f9f9f9
+    style UC47 fill:#f9f9f9
+    style UC48 fill:#f9f9f9
+    style UC49 fill:#f9f9f9
+    style UC50 fill:#f9f9f9
+    style UC51 fill:#f9f9f9
+    style UC52 fill:#f9f9f9
+    style UC53 fill:#f9f9f9
+    style UC54 fill:#f9f9f9
+    style UC55 fill:#f9f9f9
+    style LiveKit fill:#00D4AA,color:#fff
+    style Resend fill:#4285F4,color:#fff
+    style Twilio fill:#34A853,color:#fff
+    style AES fill:#EA4335,color:#fff
+    style Directions fill:#FBBC04,color:#000
+    style Firestore fill:#FFA000,color:#000
 ```
 
 ### Use Case Descriptions Table
