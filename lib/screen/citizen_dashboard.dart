@@ -461,7 +461,7 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                   padding: const EdgeInsets.all(16),
                   child: TextField(
                     decoration: InputDecoration(
-                      hintText: 'Search facilities...',
+                      hintText: 'Search facilities by name, type, or address...',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _facilitySearchQuery.isNotEmpty
                           ? IconButton(
@@ -479,35 +479,109 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    onSubmitted: (value) {
-                      // Find matching facility
-                      if (value.isNotEmpty && allFacilities.isNotEmpty) {
-                        final query = value.toLowerCase();
-                        final matchedFacility = allFacilities.firstWhere(
-                          (facility) {
-                            final address = facility.meta?['address'] as String? ?? '';
-                            return facility.name.toLowerCase().contains(query) ||
-                                address.toLowerCase().contains(query) ||
-                                facility.type.toLowerCase().contains(query);
-                          },
-                          orElse: () => allFacilities.first,
-                        );
-
-                        setState(() {
-                          _highlightedFacilityId = matchedFacility.id;
-                          _facilitySearchQuery = value;
-                        });
-                      }
-                      Navigator.pop(context); // Close the filter dialog
-                    },
                     onChanged: (value) {
                       setState(() {
                         _facilitySearchQuery = value;
+                        _highlightedFacilityId = null; // Clear highlight when typing
                       });
                       setModalState(() {});
                     },
                   ),
                 ),
+
+                // Search results (show when user is searching)
+                if (_facilitySearchQuery.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'Search Results',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: Builder(
+                      builder: (context) {
+                        final query = _facilitySearchQuery.toLowerCase();
+                        final matchedFacilities = allFacilities.where((facility) {
+                          final address = facility.meta?['address'] as String? ?? '';
+                          return facility.name.toLowerCase().contains(query) ||
+                              address.toLowerCase().contains(query) ||
+                              facility.type.toLowerCase().contains(query);
+                        }).toList();
+
+                        if (matchedFacilities.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'No facilities found matching "$_facilitySearchQuery"',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.grey[600]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: matchedFacilities.length,
+                          itemBuilder: (context, index) {
+                            final facility = matchedFacilities[index];
+                            final address = facility.meta?['address'] as String? ?? 'No address';
+
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: _getColorForFacilityType(facility.type),
+                                child: Text(
+                                  facility.type[0].toUpperCase(),
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              title: Text(
+                                facility.name,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(facility.type, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                                  if (address != 'No address')
+                                    Text(
+                                      address,
+                                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                              onTap: () {
+                                setState(() {
+                                  _highlightedFacilityId = facility.id;
+                                  _facilitySearchQuery = facility.name; // Set to facility name
+                                });
+                                Navigator.pop(context); // Close dialog and zoom to facility
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const Divider(),
+                ],
 
                 // Show/Hide All Toggle
                 SwitchListTile(
@@ -570,6 +644,17 @@ class _CitizenDashboardState extends State<CitizenDashboard>
         setModalState(() {});
       },
     );
+  }
+
+  /// Get color for facility type (for search results display)
+  Color _getColorForFacilityType(String type) {
+    final t = type.toLowerCase();
+    if (t.contains('hospital')) return Colors.red;
+    if (t.contains('clinic')) return Colors.pink;
+    if (t.contains('police')) return Colors.blue;
+    if (t.contains('fire')) return Colors.orange;
+    if (t.contains('shelter')) return Colors.green;
+    return Colors.grey;
   }
 
   @override
