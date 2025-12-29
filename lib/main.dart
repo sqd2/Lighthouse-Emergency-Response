@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:lighthouse/screen/dispatcher_dashboard.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -31,6 +32,15 @@ void main() async {
   // Wrap EVERYTHING in error handling
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // Load environment variables
+    try {
+      await dotenv.load(fileName: ".env");
+      debugPrint('[App] Environment variables loaded successfully');
+    } catch (e) {
+      debugPrint('[App] Warning: Could not load .env file: $e');
+      // Continue anyway - will use default values
+    }
 
     try {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);

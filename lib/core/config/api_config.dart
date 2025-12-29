@@ -1,3 +1,5 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 /// Central configuration for all API keys and external service endpoints.
 /// This file consolidates API keys that are safe to be exposed in client-side code.
 ///
@@ -15,21 +17,15 @@ class ApiConfig {
   ///
   /// Security note: While this key is exposed in client code, it is protected by
   /// domain restrictions and API restrictions in the Google Cloud Console.
-  static const String googleMapsApiKey =
-      String.fromEnvironment(
-        'GOOGLE_MAPS_API_KEY',
-        defaultValue: 'GOOGLE_MAPS_API_KEY',
-      );
+  static String get googleMapsApiKey =>
+      dotenv.env['GOOGLE_MAPS_API_KEY'] ?? 'GOOGLE_MAPS_API_KEY';
 
   /// LiveKit server URL for real-time communication.
   ///
   /// This URL points to the LiveKit server instance used for WebRTC connections.
   /// The actual authentication tokens are generated server-side via Cloud Functions.
-  static const String liveKitUrl =
-      String.fromEnvironment(
-        'LIVEKIT_URL',
-        defaultValue: 'wss://lighthouse-u7fqfxnv.livekit.cloud',
-      );
+  static String get liveKitUrl =>
+      dotenv.env['LIVEKIT_URL'] ?? 'wss://lighthouse-u7fqfxnv.livekit.cloud';
 
   /// Validates that all required API keys are configured.
   ///

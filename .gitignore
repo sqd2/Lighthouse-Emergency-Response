@@ -53,5 +53,8 @@ firebase-debug.*.log
 node_modules/
 package-lock.json
 
+# Environment variables
+.env
+
 # Claude Code
 .claude/
