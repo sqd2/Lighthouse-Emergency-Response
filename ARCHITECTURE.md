@@ -507,13 +507,6 @@ graph TB
 ```mermaid
 erDiagram
     USERS ||--o{ EMERGENCY_ALERTS : creates
-    USERS ||--o{ MEDICAL_INFO : has
-    USERS ||--o{ TWO_FACTOR : enables
-    USERS ||--o{ CALLS : participates
-    USERS ||--o{ CHATS : sends
-    EMERGENCY_ALERTS ||--o{ CHATS : contains
-    EMERGENCY_ALERTS ||--o{ CALLS : initiates
-
     USERS {
         string uid PK
         string email
@@ -522,21 +515,6 @@ erDiagram
         string role
         timestamp createdAt
         timestamp updatedAt
-    }
-
-    MEDICAL_INFO {
-        string userId PK
-        object encrypted
-        string iv
-        timestamp updatedAt
-    }
-
-    TWO_FACTOR {
-        string userId PK
-        boolean enabled
-        string method
-        string secret
-        timestamp enabledAt
     }
 
     EMERGENCY_ALERTS {
@@ -554,25 +532,38 @@ erDiagram
         timestamp arrivedAt
         timestamp resolvedAt
     }
+```
 
-    CALLS {
-        string id PK
-        string callerId FK
-        string receiverId FK
-        string roomName
-        string status
-        timestamp startedAt
-        timestamp endedAt
-    }
+**Note**: The diagram above shows the top-level collections. Firestore uses a hierarchical structure with subcollections:
 
-    CHATS {
-        string id PK
-        string alertId FK
-        string senderId FK
-        string message
-        string type
-        timestamp sentAt
-    }
+**Nested Subcollections Structure:**
+```
+users/{uid}
+├── medical/{docId}          // Encrypted medical information
+│   ├── encrypted (object)
+│   ├── iv (string)
+│   └── updatedAt (timestamp)
+│
+└── twoFactor/{docId}        // 2FA settings
+    ├── enabled (boolean)
+    ├── method (string)
+    ├── secret (string)
+    └── enabledAt (timestamp)
+
+emergency_alerts/{alertId}
+├── calls/{callId}           // WebRTC call records
+│   ├── callerId (string)
+│   ├── receiverId (string)
+│   ├── roomName (string)
+│   ├── status (string)
+│   ├── startedAt (timestamp)
+│   └── endedAt (timestamp)
+│
+└── chats/{messageId}        // Chat messages
+    ├── senderId (string)
+    ├── message (string)
+    ├── type (string)
+    └── sentAt (timestamp)
 ```
 
 ### Key Data Models
@@ -755,5 +746,5 @@ For academic evaluation, this architecture showcases:
 
 ---
 
-*Last Updated: December 29, 2024*
+*Last Updated: December 29, 2025*
 *Version: 1.0.0*
