@@ -1,8 +1,10 @@
+import 'package:lighthouse/core/config/api_config.dart';
+
 /// Configuration for LiveKit WebRTC integration
 class LiveKitConfig {
-  // LiveKit server URL - using LiveKit Cloud (free tier)
+  // LiveKit server URL - loaded from environment variables
   // For self-hosted: Change to your own server URL (e.g., 'wss://your-server.com')
-  static const String serverUrl = 'wss://lighthouse-webrtc-a5tfjg76.livekit.cloud';
+  static String get serverUrl => ApiConfig.liveKitUrl;
 
   // Note: LiveKit tokens are generated server-side via Firebase Cloud Function
   // This ensures API keys/secrets are never exposed in client code

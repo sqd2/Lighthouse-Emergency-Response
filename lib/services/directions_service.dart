@@ -14,7 +14,7 @@ class DirectionsService {
   /// Private constructor to prevent instantiation of this service class.
   DirectionsService._();
 
-  static const String _apiKey = ApiConfig.googleMapsApiKey;
+  static final String _apiKey = ApiConfig.googleMapsApiKey;
 
   // Cloud Function URL for web to avoid CORS
   static const String _cloudFunctionUrl =

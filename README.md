@@ -37,6 +37,10 @@ Lighthouse is a comprehensive emergency response platform designed for final yea
 git clone https://github.com/yourusername/lighthouse.git
 cd lighthouse
 
+# Set up environment variables
+cp .env.example .env
+# Edit .env file and add your API keys
+
 # Install dependencies
 flutter pub get
 
@@ -51,7 +55,34 @@ flutter run -d chrome
 
 ## ⚙️ Configuration
 
-### 1. Firebase Setup
+### 1. Environment Variables
+
+The application uses a `.env` file to manage API keys and configuration. This keeps sensitive information out of version control.
+
+**Setup:**
+
+1. Copy the example file:
+```bash
+cp .env.example .env
+```
+
+2. Edit `.env` and add your actual API keys:
+```bash
+# Google Maps API Key
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+
+# LiveKit Configuration
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_livekit_api_key_here
+LIVEKIT_API_SECRET=your_livekit_api_secret_here
+```
+
+**Important:**
+- The `.env` file is git-ignored and never committed to version control
+- `.env.example` provides a template showing which keys are needed
+- Default values are provided as fallback, but should be replaced with your own keys for production
+
+### 2. Firebase Setup
 
 1. Create project at [Firebase Console](https://console.firebase.google.com/)
 2. Enable services:
@@ -81,7 +112,7 @@ service cloud.firestore {
 }
 ```
 
-### 2. Google Maps API
+### 3. Google Maps API
 
 1. Enable APIs in [Google Cloud Console](https://console.cloud.google.com/):
    - Maps JavaScript API
@@ -89,20 +120,28 @@ service cloud.firestore {
    - Places API
    - Directions API
 
-2. Update `lib/core/config/api_config.dart`:
-```dart
-static const String googleMapsApiKey = 'YOUR_API_KEY';
+2. Add your API key to `.env`:
+```bash
+GOOGLE_MAPS_API_KEY=your_actual_api_key_here
 ```
 
-### 3. LiveKit Configuration
+3. Configure API restrictions:
+   - Add HTTP referrers (for web): `your-domain.com/*`
+   - Restrict to necessary APIs only
+   - Enable billing in Google Cloud Console
+
+### 4. LiveKit Configuration
 
 1. Sign up at [LiveKit Cloud](https://cloud.livekit.io/)
-2. Update `lib/config/livekit_config.dart`:
-```dart
-static const String url = 'wss://your-project.livekit.cloud';
-static const String apiKey = 'YOUR_API_KEY';
-static const String apiSecret = 'YOUR_API_SECRET';
+2. Create a new project
+3. Add your LiveKit credentials to `.env`:
+```bash
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_api_key
+LIVEKIT_API_SECRET=your_api_secret
 ```
+
+**Note:** LiveKit API credentials in `.env` are used by Cloud Functions for generating access tokens. The client app only needs the `LIVEKIT_URL`.
 
 ---
 
@@ -219,6 +258,12 @@ For detailed architecture documentation with diagrams, see [ARCHITECTURE.md](ARC
    - WebRTC SRTP for encrypted media
    - Domain-restricted API keys
 
+5. **Environment Variables**
+   - API keys stored in `.env` file (git-ignored)
+   - Never committed to version control
+   - Template provided via `.env.example`
+   - Server-side secrets in Firebase Functions environment
+
 ---
 
 ## 🌐 Deployment
@@ -264,15 +309,28 @@ open ios/Runner.xcworkspace
 
 ### Common Issues
 
+**Environment variables not loading:**
+```bash
+# Make sure .env file exists in project root
+cp .env.example .env
+
+# Edit .env and add your keys
+# Then rebuild the app
+flutter clean
+flutter pub get
+flutter run
+```
+
 **Firebase not initialized:**
 ```bash
 flutterfire configure
 ```
 
 **Google Maps not showing:**
-- Verify API key in `api_config.dart`
+- Verify API key is set in `.env` file
 - Enable billing in Google Cloud
 - Check API restrictions
+- Rebuild app after changing `.env`
 
 **Build failed:**
 ```bash
