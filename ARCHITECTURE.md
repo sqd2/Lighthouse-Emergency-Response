@@ -467,8 +467,9 @@ graph TB
     subgraph "Firestore Collections"
         Alerts[emergency_alerts]
         Users[users]
-        Chats[chats]
-        Calls[calls]
+        Facilities[facilities]
+        Chats[chats - subcollection]
+        Calls[calls - subcollection]
     end
 
     subgraph "Client Apps"
@@ -486,15 +487,21 @@ graph TB
     Users -.->|Stream| C2
     Users -.->|Stream| D1
 
+    Facilities -.->|Stream| C1
+    Facilities -.->|Stream| D1
+    Facilities -.->|Stream| D2
+
     Chats -.->|Stream| C1
     Chats -.->|Stream| D1
 
     C1 -->|Create Alert| Alerts
     D1 -->|Update Alert| Alerts
+    D1 -->|Add Facility| Facilities
     C1 -->|Send Message| Chats
     D1 -->|Send Message| Chats
 
     style Alerts fill:#EA4335
+    style Facilities fill:#34A853
     style Chats fill:#4285F4
 ```
 
@@ -531,6 +538,17 @@ erDiagram
         timestamp acceptedAt
         timestamp arrivedAt
         timestamp resolvedAt
+    }
+
+    FACILITIES {
+        string id PK
+        string name
+        string type
+        double latitude
+        double longitude
+        object meta
+        string source
+        timestamp createdAt
     }
 ```
 
@@ -592,7 +610,17 @@ class MedicalInfo {
   final String notes;
 }
 
-// Call Model
+// Facility Pin Model
+class FacilityPin {
+  final String id;
+  final String name;
+  final String type;  // 'hospital' | 'clinic' | 'police' | 'firestation' | 'shelter'
+  final double lon, lat;
+  final Map<String, dynamic>? meta;  // Additional info (address, phone, etc.)
+  final String source;  // 'manual' | 'google_places'
+}
+
+// Call Model (Subcollection)
 class Call {
   final String id;
   final String callerId;
