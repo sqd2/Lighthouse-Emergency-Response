@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:ligthouse/screen/dispatcher_dashboard.dart';
+import 'package:lighthouse/screen/dispatcher_dashboard.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,10 +10,10 @@ import 'dart:html' as html show window;
 
 import 'screen/login_screen.dart';
 import 'screen/citizen_dashboard.dart';
+import 'screen/two_factor_verification_screen.dart';
 import 'models/call.dart';
 import 'widgets/incoming_call_dialog.dart';
 import 'services/livekit_service.dart';
-import 'services/two_factor_gate.dart';
 
 // Global navigator key for showing dialogs from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -260,6 +260,52 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+  Stream<Map<String, dynamic>> _watch2FASession(String userId) {
+    return FirebaseFirestore.instance
+        .collection('twoFactorSessions')
+        .doc(userId)
+        .snapshots()
+        .asyncMap((snapshot) async {
+      if (!snapshot.exists) {
+        // No session = no 2FA required or already verified
+        debugPrint('[AuthGate] No 2FA session, proceeding');
+        return {'verified': true};
+      }
+
+      final verified = snapshot.data()?['verified'] as bool? ?? false;
+      debugPrint('[AuthGate] 2FA session verified: $verified');
+
+      // Clean up verified sessions
+      if (verified) {
+        snapshot.reference.delete().then((_) {
+          debugPrint('[AuthGate] Cleaned up verified 2FA session');
+        });
+        return {'verified': true};
+      }
+
+      // Session exists but not verified - get 2FA settings
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .get();
+
+        final data = userDoc.data();
+        return {
+          'verified': false,
+          'method': data?['twoFactorMethod'] as String? ?? 'email',
+          'totpSecret': data?['totpSecret'] as String?,
+        };
+      } catch (e) {
+        debugPrint('[AuthGate] Error getting 2FA settings: $e');
+        return {'verified': false};
+      }
+    }).handleError((e) {
+      debugPrint('[AuthGate] Error watching 2FA session: $e');
+      return {'verified': false};
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -277,55 +323,66 @@ class _AuthGateState extends State<AuthGate> {
           // Cancel listener when logged out
           _callListener?.cancel();
           _currentUserId = null;
-          TwoFactorGate.reset(); // Clear 2FA verification state
           return const LoginScreen();
         }
 
         final user = snapshot.data!;
 
-        // Check if 2FA verification is pending - block navigation until complete
-        if (TwoFactorGate.isVerifying) {
-          return Scaffold(
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Verifying two-factor authentication...'),
-                ],
-              ),
-            ),
-          );
-        }
-
-        // TEMPORARILY DISABLED - Global call listener causing PWA crashes
-        // TODO: Re-enable with better error handling
-        // if (_currentUserId != user.uid) {
-        //   Future.delayed(const Duration(milliseconds: 500), () {
-        //     if (mounted) {
-        //       _setupGlobalCallListener(user.uid);
-        //     }
-        //   });
-        // }
-
-        // Logged in, fetch firestore data
-        return FutureBuilder<String?>(
-          future: _getUserRole(user),
-          builder: (context, roleSnap) {
-            if (roleSnap.connectionState == ConnectionState.waiting) {
+        // Watch 2FA session in real-time before proceeding
+        return StreamBuilder<Map<String, dynamic>>(
+          stream: _watch2FASession(user.uid),
+          builder: (context, sessionSnap) {
+            if (sessionSnap.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );
             }
 
-            final role = roleSnap.data ?? 'citizen';
+            final sessionData = sessionSnap.data ?? {'verified': false};
+            final sessionVerified = sessionData['verified'] as bool? ?? false;
 
-            if (role == 'dispatcher') {
-              return const DispatcherDashboard();
-            } else {
-              return const CitizenDashboard();
+            // If 2FA session exists but not verified, show verification screen
+            if (!sessionVerified) {
+              debugPrint('[AuthGate] 2FA not verified, showing verification screen');
+              final method = sessionData['method'] as String? ?? 'email';
+              final totpSecret = sessionData['totpSecret'] as String?;
+
+              return TwoFactorVerificationScreen(
+                userId: user.uid,
+                method: method,
+                totpSecret: totpSecret,
+              );
             }
+
+            // TEMPORARILY DISABLED - Global call listener causing PWA crashes
+            // TODO: Re-enable with better error handling
+            // if (_currentUserId != user.uid) {
+            //   Future.delayed(const Duration(milliseconds: 500), () {
+            //     if (mounted) {
+            //       _setupGlobalCallListener(user.uid);
+            //     }
+            //   });
+            // }
+
+            // Logged in and 2FA verified, fetch firestore data
+            return FutureBuilder<String?>(
+              future: _getUserRole(user),
+              builder: (context, roleSnap) {
+                if (roleSnap.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final role = roleSnap.data ?? 'citizen';
+
+                if (role == 'dispatcher') {
+                  return const DispatcherDashboard();
+                } else {
+                  return const CitizenDashboard();
+                }
+              },
+            );
           },
         );
       },

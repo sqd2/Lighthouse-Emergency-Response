@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/validators.dart';
 import '../services/two_factor_service.dart';
-import '../services/two_factor_gate.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -60,64 +59,84 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isLogin) {
-        // Login user
+        debugPrint('[2FA] Starting login process');
+
+        // Sign in with Firebase Auth first
         final userCred = await _auth.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
 
-        // Check if 2FA is enabled
-        final userId = userCred.user!.uid;
+        final userId = userCred.user?.uid;
+        if (userId == null) {
+          debugPrint('[2FA] ERROR: userId is null after sign-in');
+          throw Exception('Authentication failed - no user ID');
+        }
+
+        debugPrint('[2FA] User signed in: $userId');
+
+        try {
+          // IMMEDIATELY create session document to prevent race condition
+          await _firestore.collection('twoFactorSessions').doc(userId).set({
+            'verified': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          debugPrint('[2FA] Session created immediately after sign-in');
+        } catch (e) {
+          debugPrint('[2FA] ERROR creating session: $e');
+          // If session creation fails, sign out and show error
+          await _auth.signOut();
+          throw Exception('Failed to create 2FA session: $e');
+        }
+
+        // Now check if 2FA is enabled
         final twoFactorSettings = await _twoFactorService.get2FASettings(userId);
+        debugPrint('[2FA] Settings: $twoFactorSettings');
+
         if (twoFactorSettings != null && twoFactorSettings['twoFactorEnabled'] == true) {
-          // Get 2FA method and validate it's not null
+          debugPrint('[2FA] 2FA is enabled');
+
           final twoFactorMethod = twoFactorSettings['twoFactorMethod'] as String?;
           if (twoFactorMethod == null || twoFactorMethod == 'none') {
+            // 2FA misconfigured - clean up and exit
+            try {
+              await _firestore.collection('twoFactorSessions').doc(userId).delete();
+            } catch (e) {
+              debugPrint('[2FA] Error deleting session: $e');
+            }
+            await _auth.signOut();
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('2FA configuration error. Please reconfigure 2FA in settings.'),
+                content: Text('2FA configuration error. Please contact support.'),
                 backgroundColor: Colors.red,
               ),
             );
             setState(() => _isLoading = false);
-            // Sign out since 2FA is misconfigured
-            await _auth.signOut();
             return;
           }
 
-          // Set 2FA pending flag to block navigation
-          TwoFactorGate.setVerifying(true);
-          setState(() => _isLoading = false);
-
-          // Verify 2FA
-          final verified = await _verify2FA(
-            userId,
-            twoFactorMethod,
-            twoFactorSettings['totpSecret'] as String?,
-          );
-
-          // Clear 2FA pending flag
-          TwoFactorGate.setVerifying(false);
-
-          if (verified) {
-            // 2FA verified - user is already signed in, AuthGate will handle navigation
-            if (!mounted) return;
-            // Trigger auth state refresh to allow navigation
-            setState(() => _isLoading = false);
-          } else {
-            // 2FA failed - sign out the user
-            await _auth.signOut();
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('2FA verification failed or cancelled'),
-                backgroundColor: Colors.red,
-              ),
-            );
+          // Session already created - AuthGate will show verification screen
+          debugPrint('[2FA] Session created, AuthGate will handle verification');
+          // Don't stop loading - let AuthGate transition to verification screen
+        } else {
+          // No 2FA enabled - mark session as verified and proceed
+          debugPrint('[2FA] No 2FA enabled, marking session verified');
+          try {
+            await _firestore.collection('twoFactorSessions').doc(userId).update({
+              'verified': true,
+            });
+          } catch (e) {
+            debugPrint('[2FA] ERROR updating session: $e');
+            // Try set instead of update
+            await _firestore.collection('twoFactorSessions').doc(userId).set({
+              'verified': true,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
           }
         }
-        // If no 2FA, login is complete - AuthGate handles navigation
+        // AuthGate will handle navigation
+        // Don't set loading to false here - let AuthGate navigate
       } else {
         // Check if email already exists
         final emailExists = await _checkEmailExists(_emailController.text.trim());
@@ -139,7 +158,12 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordController.text.trim(),
         );
 
-        await _firestore.collection('users').doc(userCred.user!.uid).set({
+        final newUserId = userCred.user?.uid;
+        if (newUserId == null) {
+          throw Exception('Registration failed - no user ID');
+        }
+
+        await _firestore.collection('users').doc(newUserId).set({
           'name': _nameController.text.trim(),
           'email': _emailController.text.trim(),
           'phone': _phoneController.text.trim(),
@@ -150,7 +174,10 @@ class _LoginScreenState extends State<LoginScreen> {
         });
 
         // Send email verification
-        await userCred.user!.sendEmailVerification();
+        final user = userCred.user;
+        if (user != null) {
+          await user.sendEmailVerification();
+        }
 
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -163,6 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       //  IMPORTANT: No navigation here. AuthGate in main.dart handles navigation.
     } on FirebaseAuthException catch (e) {
+      debugPrint('[2FA] FirebaseAuthException: ${e.code} - ${e.message}');
       if (!mounted) return;
       final errorMessage = Validators.getFirebaseAuthErrorMessage(e.code);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -172,18 +200,19 @@ class _LoginScreenState extends State<LoginScreen> {
           duration: const Duration(seconds: 4),
         ),
       );
-    } catch (e) {
+      setState(() => _isLoading = false);
+    } catch (e, stack) {
+      debugPrint('[2FA] Unexpected error: $e');
+      debugPrint('[2FA] Stack trace: $stack');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('An error occurred: ${e.toString()}'),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() => _isLoading = false);
     }
   }
 
@@ -259,32 +288,70 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<bool> _verify2FA(String userId, String method, String? totpSecret) async {
     try {
+      debugPrint('[2FA] _verify2FA called with method: $method, userId: $userId');
+      debugPrint('[2FA] mounted: $mounted');
+
       if (method == 'totp' && totpSecret != null) {
         // TOTP verification - show dialog to enter code
+        debugPrint('[2FA] Showing TOTP dialog');
         return await _showTOTPVerificationDialog(totpSecret);
       } else if (method == 'email' || method == 'sms') {
-        // Send verification code and show dialog
+        // Generate and store verification code
+        debugPrint('[2FA] Generating verification code for $method');
         final code = _twoFactorService.generateVerificationCode();
-        await _twoFactorService.storeVerificationCode(userId, code, method);
+        debugPrint('[2FA] Generated code: $code');
 
+        await _twoFactorService.storeVerificationCode(userId, code, method);
+        debugPrint('[2FA] Code stored in Firestore');
+
+        // Send email/SMS in background (don't wait for it)
+        // This prevents blocking the dialog from showing
         if (method == 'email') {
-          final userDoc = await _firestore.collection('users').doc(userId).get();
-          final email = userDoc.data()?['email'] as String?;
-          if (email != null) {
-            await _twoFactorService.sendEmailVerificationCode(email, code);
-          }
+          _firestore.collection('users').doc(userId).get().then((userDoc) {
+            final email = userDoc.data()?['email'] as String?;
+            debugPrint('[2FA] Sending email to: $email');
+            if (email != null) {
+              _twoFactorService.sendEmailVerificationCode(email, code).then((_) {
+                debugPrint('[2FA] Email sent successfully');
+              }).catchError((e) {
+                debugPrint('[2FA] ERROR sending email: $e');
+              });
+            } else {
+              debugPrint('[2FA] ERROR: Email is null!');
+            }
+          });
         } else if (method == 'sms') {
-          final userDoc = await _firestore.collection('users').doc(userId).get();
-          final phone = userDoc.data()?['phone'] as String?;
-          if (phone != null) {
-            await _twoFactorService.sendSMSVerificationCode(phone, code);
-          }
+          _firestore.collection('users').doc(userId).get().then((userDoc) {
+            final phone = userDoc.data()?['phone'] as String?;
+            debugPrint('[2FA] Sending SMS to: $phone');
+            if (phone != null) {
+              _twoFactorService.sendSMSVerificationCode(phone, code).then((_) {
+                debugPrint('[2FA] SMS sent successfully');
+              }).catchError((e) {
+                debugPrint('[2FA] ERROR sending SMS: $e');
+              });
+            } else {
+              debugPrint('[2FA] ERROR: Phone is null!');
+            }
+          });
         }
 
-        return await _showCodeVerificationDialog(userId, method);
+        // Show dialog immediately (don't wait for email/SMS to send)
+        debugPrint('[2FA] Showing dialog immediately');
+        if (!mounted) {
+          debugPrint('[2FA] ERROR: Widget is not mounted, cannot show dialog!');
+          return false;
+        }
+
+        final result = await _showCodeVerificationDialog(userId, method);
+        debugPrint('[2FA] Dialog result: $result');
+        return result;
       }
+      debugPrint('[2FA] No matching method, returning false');
       return false;
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[2FA] Error in _verify2FA: $e');
+      debugPrint('[2FA] Stack trace: $stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -458,14 +525,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   // Logo/Title
                   Icon(
-                    Icons.security,
-                    size: 80,
+                    Icons.emergency,
+                    size: 64,
                     color: Theme.of(context).primaryColor,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   Text(
-                    'Lighthouse Emergency',
-                    style: Theme.of(context).textTheme.headlineSmall,
+                    'Lighthouse',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Emergency Response System',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),

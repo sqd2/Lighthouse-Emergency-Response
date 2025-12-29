@@ -67,7 +67,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '572669546401',
     projectId: 'lighthouse-2498c',
     storageBucket: 'lighthouse-2498c.firebasestorage.app',
-    iosBundleId: 'com.example.ligthouse',
+    iosBundleId: 'com.example.lighthouse',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
