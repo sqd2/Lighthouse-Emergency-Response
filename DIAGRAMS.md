@@ -3,14 +3,606 @@
 This document provides detailed visual diagrams for the Lighthouse Emergency Response System, complementing the architecture documentation in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Table of Contents
-1. [Complete WebRTC Call Flow](#complete-webrtc-call-flow)
-2. [Analytics Dashboard Data Flow](#analytics-dashboard-data-flow)
-3. [Secrets Management Architecture](#secrets-management-architecture)
-4. [Two-Factor Authentication Setup Flow](#two-factor-authentication-setup-flow)
-5. [Component and Service Dependencies](#component-and-service-dependencies)
-6. [Cloud Functions Architecture](#cloud-functions-architecture)
-7. [SMS/Email Delivery Flow](#smsemail-delivery-flow)
-8. [Complete User Journey](#complete-user-journey)
+1. [System Design Diagram](#system-design-diagram)
+2. [Use Case Diagram](#use-case-diagram)
+3. [Complete WebRTC Call Flow](#complete-webrtc-call-flow)
+4. [Analytics Dashboard Data Flow](#analytics-dashboard-data-flow)
+5. [Secrets Management Architecture](#secrets-management-architecture)
+6. [Two-Factor Authentication Setup Flow](#two-factor-authentication-setup-flow)
+7. [Component and Service Dependencies](#component-and-service-dependencies)
+8. [Cloud Functions Architecture](#cloud-functions-architecture)
+9. [SMS/Email Delivery Flow](#smsemail-delivery-flow)
+10. [Complete User Journey](#complete-user-journey)
+
+---
+
+## System Design Diagram
+
+### Complete System Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Client Platforms"
+        subgraph "Mobile Apps"
+            Android[Android App<br/>Flutter 3.9.2]
+            iOS[iOS App<br/>Flutter 3.9.2]
+        end
+
+        subgraph "Web & Desktop"
+            PWA[Progressive Web App<br/>Flutter Web]
+            Desktop[Desktop Apps<br/>Windows/macOS/Linux]
+        end
+    end
+
+    subgraph "Presentation Layer - Flutter"
+        subgraph "Citizen UI"
+            CitizenDash[Citizen Dashboard<br/>- SOS Button<br/>- Map View<br/>- Medical Info]
+            CitizenScreens[Screens:<br/>- Profile<br/>- Settings<br/>- 2FA Setup<br/>- Alert History]
+        end
+
+        subgraph "Dispatcher UI"
+            DispatcherDash[Dispatcher Dashboard<br/>- Alert Feed<br/>- Analytics<br/>- Map View]
+            DispatcherScreens[Screens:<br/>- Profile<br/>- Settings<br/>- Facility Management]
+        end
+
+        subgraph "Shared UI"
+            CallScreen[Call Screen<br/>Video/Audio UI]
+            ChatScreen[Chat Screen<br/>Real-time Messages]
+            AuthScreens[Auth Screens:<br/>- Login<br/>- 2FA Gate<br/>- 2FA Verify]
+        end
+    end
+
+    subgraph "Business Logic Layer - Services"
+        subgraph "Core Services"
+            TwoFactorSvc[TwoFactorService<br/>TOTP + Email 2FA]
+            EncryptionSvc[EncryptionService<br/>AES-256-CBC]
+            MedicalInfoSvc[MedicalInfoService<br/>Encrypted CRUD]
+        end
+
+        subgraph "Communication Services"
+            LiveKitSvc[LiveKitService<br/>WebRTC Calls]
+            NotificationSvc[NotificationService<br/>FCM Push]
+        end
+
+        subgraph "Location Services"
+            PlacesSvc[PlacesService<br/>Facility Search]
+            DirectionsSvc[DirectionsService<br/>Route Calculation]
+        end
+
+        subgraph "Data Services"
+            AnalyticsSvc[AnalyticsService<br/>Metrics Aggregation]
+            AlertHistorySvc[AlertHistoryService<br/>Alert CRUD]
+        end
+    end
+
+    subgraph "Data Models Layer"
+        Models[Data Models:<br/>- EmergencyAlert<br/>- MedicalInfo<br/>- Call<br/>- ChatMessage<br/>- FacilityPin]
+    end
+
+    subgraph "Firebase Backend"
+        subgraph "Authentication & Authorization"
+            FirebaseAuth[Firebase Authentication<br/>Email/Password<br/>JWT Tokens]
+        end
+
+        subgraph "Data Storage"
+            Firestore[(Cloud Firestore<br/>NoSQL Database<br/>Real-time Sync)]
+            FirebaseStorage[(Firebase Storage<br/>Media Files<br/>Photos/Videos)]
+        end
+
+        subgraph "Serverless Computing"
+            CloudFunctions[Cloud Functions<br/>Node.js Runtime]
+
+            subgraph "Function Endpoints"
+                TokenFunc[generateLiveKitToken<br/>JWT Generation]
+                EmailFunc[sendEmail<br/>Resend API]
+                SMSFunc[sendSMS<br/>Twilio API]
+            end
+        end
+
+        subgraph "Messaging & Secrets"
+            FCM[Firebase Cloud<br/>Messaging<br/>Push Notifications]
+            SecretManager[Firebase Secret<br/>Manager<br/>API Credentials]
+        end
+    end
+
+    subgraph "External Services"
+        subgraph "Real-time Communication"
+            LiveKitCloud[LiveKit Cloud<br/>WebRTC SFU Server<br/>Media Relay]
+        end
+
+        subgraph "Location & Maps"
+            GoogleMaps[Google Maps API<br/>Map Rendering]
+            GooglePlaces[Google Places API<br/>Facility Search]
+            GoogleDirections[Google Directions API<br/>Route Calculation]
+        end
+
+        subgraph "Communication APIs"
+            Twilio[Twilio API<br/>SMS Delivery]
+            Resend[Resend API<br/>Email Delivery]
+        end
+    end
+
+    subgraph "Infrastructure"
+        subgraph "Hosting & CDN"
+            FirebaseHosting[Firebase Hosting<br/>Global CDN<br/>SSL/TLS]
+            ServiceWorker[Service Worker<br/>Offline Support<br/>PWA Cache]
+        end
+
+        subgraph "Security"
+            HTTPS[HTTPS/TLS 1.3<br/>All Communications]
+            SRTP[SRTP<br/>Encrypted Media]
+            SecurityRules[Firestore Security Rules<br/>RBAC]
+        end
+    end
+
+    %% Client to Presentation
+    Android --> CitizenDash
+    iOS --> CitizenDash
+    PWA --> CitizenDash
+    PWA --> DispatcherDash
+    Desktop --> DispatcherDash
+
+    %% Presentation to Business Logic
+    CitizenDash --> TwoFactorSvc
+    CitizenDash --> MedicalInfoSvc
+    CitizenDash --> PlacesSvc
+    CitizenDash --> DirectionsSvc
+    CitizenDash --> AlertHistorySvc
+
+    DispatcherDash --> AnalyticsSvc
+    DispatcherDash --> AlertHistorySvc
+    DispatcherDash --> PlacesSvc
+
+    CallScreen --> LiveKitSvc
+    ChatScreen --> NotificationSvc
+    AuthScreens --> TwoFactorSvc
+
+    %% Business Logic to Data Models
+    TwoFactorSvc --> Models
+    MedicalInfoSvc --> Models
+    LiveKitSvc --> Models
+    AnalyticsSvc --> Models
+    AlertHistorySvc --> Models
+
+    %% Business Logic to Backend
+    TwoFactorSvc --> FirebaseAuth
+    TwoFactorSvc --> Firestore
+    TwoFactorSvc --> CloudFunctions
+
+    EncryptionSvc --> FirebaseAuth
+    MedicalInfoSvc --> EncryptionSvc
+    MedicalInfoSvc --> Firestore
+
+    LiveKitSvc --> Firestore
+    LiveKitSvc --> CloudFunctions
+    NotificationSvc --> FCM
+    NotificationSvc --> Firestore
+
+    AnalyticsSvc --> Firestore
+    AlertHistorySvc --> Firestore
+    AlertHistorySvc --> FirebaseStorage
+
+    %% Cloud Functions to Secrets
+    TokenFunc --> SecretManager
+    EmailFunc --> SecretManager
+    SMSFunc --> SecretManager
+
+    CloudFunctions --> TokenFunc
+    CloudFunctions --> EmailFunc
+    CloudFunctions --> SMSFunc
+
+    %% Cloud Functions to External APIs
+    TokenFunc --> LiveKitCloud
+    EmailFunc --> Resend
+    SMSFunc --> Twilio
+
+    %% Services to External APIs
+    LiveKitSvc --> LiveKitCloud
+    PlacesSvc --> GooglePlaces
+    DirectionsSvc --> GoogleDirections
+    CitizenDash --> GoogleMaps
+    DispatcherDash --> GoogleMaps
+
+    %% Hosting
+    PWA --> FirebaseHosting
+    FirebaseHosting --> ServiceWorker
+
+    %% Security Layer
+    HTTPS --> FirebaseAuth
+    HTTPS --> Firestore
+    HTTPS --> CloudFunctions
+    SRTP --> LiveKitCloud
+    SecurityRules --> Firestore
+
+    %% Styling
+    style Android fill:#3DDC84
+    style iOS fill:#007AFF
+    style PWA fill:#4285F4
+    style Firestore fill:#FFA000
+    style LiveKitCloud fill:#00D4AA
+    style SecretManager fill:#EA4335
+    style EncryptionSvc fill:#34A853
+    style TwoFactorSvc fill:#EA4335
+    style AnalyticsSvc fill:#FBBC04
+```
+
+### System Technology Stack Breakdown
+
+```mermaid
+graph LR
+    subgraph "Frontend Stack"
+        F1[Flutter 3.9.2<br/>Dart 3.9.2]
+        F2[Material Design<br/>UI Components]
+        F3[fl_chart<br/>Analytics Charts]
+        F4[google_maps_flutter<br/>Map Integration]
+        F5[livekit_client<br/>WebRTC SDK]
+    end
+
+    subgraph "Backend Stack"
+        B1[Firebase Auth<br/>Authentication]
+        B2[Cloud Firestore<br/>NoSQL Database]
+        B3[Firebase Storage<br/>Blob Storage]
+        B4[Cloud Functions<br/>Node.js 18]
+        B5[Firebase Hosting<br/>Static Hosting]
+    end
+
+    subgraph "Security Stack"
+        S1[encrypt package<br/>AES-256-CBC]
+        S2[pointycastle<br/>SHA-256 Hashing]
+        S3[otp package<br/>TOTP Generator]
+        S4[Firebase Secret<br/>Manager]
+    end
+
+    subgraph "External APIs"
+        E1[LiveKit Cloud<br/>WebRTC Infrastructure]
+        E2[Google Maps APIs<br/>Maps/Places/Directions]
+        E3[Twilio API<br/>SMS Gateway]
+        E4[Resend API<br/>Email Service]
+    end
+
+    F1 --> B1
+    F1 --> B2
+    F1 --> B3
+    F1 --> B5
+
+    B4 --> S4
+    B4 --> E1
+    B4 --> E3
+    B4 --> E4
+
+    F1 --> S1
+    F1 --> S2
+    F1 --> S3
+
+    F5 --> E1
+    F4 --> E2
+
+    style F1 fill:#4285F4
+    style B2 fill:#FFA000
+    style S1 fill:#34A853
+    style E1 fill:#00D4AA
+```
+
+### Data Flow and Communication Patterns
+
+```mermaid
+graph TB
+    subgraph "Real-time Data Flows"
+        RT1[Emergency Alerts<br/>Real-time Sync]
+        RT2[Location Updates<br/>GPS Streaming]
+        RT3[Call Status<br/>WebRTC Signaling]
+        RT4[Chat Messages<br/>Real-time Chat]
+    end
+
+    subgraph "Request-Response Flows"
+        RR1[2FA Code Generation<br/>HTTP Callable]
+        RR2[LiveKit Token<br/>HTTP Callable]
+        RR3[Analytics Queries<br/>Firestore Queries]
+        RR4[Facility Search<br/>Google Places API]
+    end
+
+    subgraph "Event-Driven Flows"
+        ED1[Alert Created<br/>→ FCM Notification]
+        ED2[Call Initiated<br/>→ Push Notification]
+        ED3[Alert Accepted<br/>→ Update UI]
+        ED4[Location Changed<br/>→ Update Map]
+    end
+
+    subgraph "Batch Operations"
+        BO1[Analytics Aggregation<br/>7-day Trend]
+        BO2[Top Dispatchers<br/>Ranking Query]
+        BO3[Alert History<br/>Paginated List]
+    end
+
+    Firestore[(Firestore)] --> RT1
+    Firestore --> RT2
+    Firestore --> RT3
+    Firestore --> RT4
+
+    CloudFunc[Cloud Functions] --> RR1
+    CloudFunc --> RR2
+    Firestore --> RR3
+    GoogleAPI[Google APIs] --> RR4
+
+    FCM[FCM] --> ED1
+    FCM --> ED2
+    Firestore --> ED3
+    GPS[GPS Service] --> ED4
+
+    Firestore --> BO1
+    Firestore --> BO2
+    Firestore --> BO3
+
+    style Firestore fill:#FFA000
+    style CloudFunc fill:#FBBC04
+    style FCM fill:#EA4335
+    style GoogleAPI fill:#4285F4
+```
+
+---
+
+## Use Case Diagram
+
+### Complete System Use Cases
+
+```mermaid
+graph TB
+    subgraph "Actors"
+        Citizen((Citizen<br/>User))
+        Dispatcher((Dispatcher<br/>User))
+        System((System<br/>Automated))
+    end
+
+    subgraph "Authentication Use Cases"
+        UC1[Register Account]
+        UC2[Login with Email/Password]
+        UC3[Enable Two-Factor Auth<br/>TOTP or Email]
+        UC4[Verify 2FA Code]
+        UC5[Logout]
+    end
+
+    subgraph "Citizen Emergency Use Cases"
+        UC6[Create Emergency Alert<br/>Select Services]
+        UC7[Add Alert Description<br/>Upload Photos/Videos]
+        UC8[Track Alert Status<br/>Real-time Updates]
+        UC9[Receive Incoming Call<br/>from Dispatcher]
+        UC10[Chat with Dispatcher<br/>Real-time Messages]
+        UC11[View Dispatcher Location<br/>Track on Map]
+        UC12[Cancel Emergency Alert]
+        UC13[View Alert History<br/>Past Emergencies]
+    end
+
+    subgraph "Citizen Medical & Profile Use Cases"
+        UC14[Add Medical Information<br/>Blood Type, Allergies]
+        UC15[Update Medical Info<br/>Encrypted Storage]
+        UC16[View Medical Info<br/>Decrypt & Display]
+        UC17[Update Profile<br/>Name, Phone, Email]
+        UC18[Change Password]
+        UC19[Configure 2FA Settings]
+    end
+
+    subgraph "Citizen Location & Navigation Use Cases"
+        UC20[Search for Facilities<br/>Hospitals, Police, Fire]
+        UC21[View Facility Details<br/>Address, Phone, Hours]
+        UC22[Navigate to Facility<br/>Google Maps Route]
+        UC23[View Current Location<br/>GPS Tracking]
+    end
+
+    subgraph "Dispatcher Alert Management Use Cases"
+        UC24[View Emergency Alerts<br/>Real-time Feed]
+        UC25[Accept Emergency Alert<br/>Assign to Self]
+        UC26[View Alert Details<br/>Location, Services, Photos]
+        UC27[View Citizen Medical Info<br/>Encrypted Access]
+        UC28[Initiate Call to Citizen<br/>Video/Audio]
+        UC29[Chat with Citizen<br/>Real-time Messages]
+        UC30[Mark Alert as Arrived<br/>On-site Arrival]
+        UC31[Mark Alert as Resolved<br/>Add Resolution Notes]
+        UC32[View Alert History<br/>All Past Alerts]
+    end
+
+    subgraph "Dispatcher Analytics & Facilities Use Cases"
+        UC33[View Analytics Dashboard<br/>Metrics & Charts]
+        UC34[View Total Alerts<br/>Time Period Filter]
+        UC35[View Response Times<br/>Average Calculation]
+        UC36[View Success Rate<br/>Percentage Stats]
+        UC37[View Top Dispatchers<br/>Leaderboard]
+        UC38[Add Facility Pin<br/>Manual Entry]
+        UC39[View Facilities on Map<br/>All Emergency Facilities]
+    end
+
+    subgraph "WebRTC Call Use Cases"
+        UC40[Start Video/Audio Call]
+        UC41[Accept Incoming Call]
+        UC42[Decline Incoming Call]
+        UC43[Toggle Mute/Unmute<br/>Audio Control]
+        UC44[Toggle Video On/Off<br/>Camera Control]
+        UC45[End Active Call]
+    end
+
+    subgraph "System Automated Use Cases"
+        UC46[Send FCM Push Notification<br/>New Alert to Dispatchers]
+        UC47[Generate LiveKit Token<br/>JWT for WebRTC]
+        UC48[Send 2FA Email Code<br/>via Resend API]
+        UC49[Send 2FA SMS Code<br/>via Twilio API]
+        UC50[Encrypt Medical Data<br/>AES-256-CBC]
+        UC51[Decrypt Medical Data<br/>User-specific Key]
+        UC52[Calculate Real-time ETA<br/>Dispatcher to Citizen]
+        UC53[Sync Location Updates<br/>Real-time GPS]
+        UC54[Aggregate Analytics Data<br/>Daily/Weekly/Monthly]
+        UC55[Enforce Security Rules<br/>Firestore RBAC]
+    end
+
+    %% Citizen to Use Cases
+    Citizen --> UC1
+    Citizen --> UC2
+    Citizen --> UC3
+    Citizen --> UC4
+    Citizen --> UC5
+
+    Citizen --> UC6
+    Citizen --> UC7
+    Citizen --> UC8
+    Citizen --> UC9
+    Citizen --> UC10
+    Citizen --> UC11
+    Citizen --> UC12
+    Citizen --> UC13
+
+    Citizen --> UC14
+    Citizen --> UC15
+    Citizen --> UC16
+    Citizen --> UC17
+    Citizen --> UC18
+    Citizen --> UC19
+
+    Citizen --> UC20
+    Citizen --> UC21
+    Citizen --> UC22
+    Citizen --> UC23
+
+    Citizen --> UC41
+    Citizen --> UC42
+    Citizen --> UC43
+    Citizen --> UC44
+    Citizen --> UC45
+
+    %% Dispatcher to Use Cases
+    Dispatcher --> UC1
+    Dispatcher --> UC2
+    Dispatcher --> UC3
+    Dispatcher --> UC4
+    Dispatcher --> UC5
+
+    Dispatcher --> UC24
+    Dispatcher --> UC25
+    Dispatcher --> UC26
+    Dispatcher --> UC27
+    Dispatcher --> UC28
+    Dispatcher --> UC29
+    Dispatcher --> UC30
+    Dispatcher --> UC31
+    Dispatcher --> UC32
+
+    Dispatcher --> UC33
+    Dispatcher --> UC34
+    Dispatcher --> UC35
+    Dispatcher --> UC36
+    Dispatcher --> UC37
+    Dispatcher --> UC38
+    Dispatcher --> UC39
+
+    Dispatcher --> UC17
+    Dispatcher --> UC18
+    Dispatcher --> UC19
+
+    Dispatcher --> UC40
+    Dispatcher --> UC41
+    Dispatcher --> UC42
+    Dispatcher --> UC43
+    Dispatcher --> UC44
+    Dispatcher --> UC45
+
+    %% System to Use Cases
+    System --> UC46
+    System --> UC47
+    System --> UC48
+    System --> UC49
+    System --> UC50
+    System --> UC51
+    System --> UC52
+    System --> UC53
+    System --> UC54
+    System --> UC55
+
+    %% Use Case Dependencies (extends/includes)
+    UC6 -.->|requires| UC23
+    UC6 -.->|triggers| UC46
+    UC7 -.->|extends| UC6
+    UC9 -.->|requires| UC47
+    UC14 -.->|requires| UC50
+    UC16 -.->|requires| UC51
+    UC25 -.->|triggers| UC53
+    UC27 -.->|requires| UC51
+    UC28 -.->|requires| UC47
+    UC28 -.->|creates| UC9
+    UC40 -.->|requires| UC47
+    UC3 -.->|triggers| UC48
+    UC3 -.->|triggers| UC49
+    UC4 -.->|verifies| UC48
+    UC4 -.->|verifies| UC49
+
+    %% Styling
+    style Citizen fill:#4285F4
+    style Dispatcher fill:#9C27B0
+    style System fill:#34A853
+
+    style UC6 fill:#EA4335
+    style UC25 fill:#FBBC04
+    style UC28 fill:#00D4AA
+    style UC40 fill:#00D4AA
+    style UC47 fill:#34A853
+    style UC50 fill:#34A853
+```
+
+### Use Case Descriptions Table
+
+| Use Case ID | Use Case Name | Actor | Description | Preconditions |
+|-------------|---------------|-------|-------------|---------------|
+| **UC1** | Register Account | Citizen, Dispatcher | Create new account with email, password, name, phone, role | None |
+| **UC2** | Login | Citizen, Dispatcher | Authenticate with email and password | Account exists |
+| **UC3** | Enable 2FA | Citizen, Dispatcher | Setup TOTP or email-based 2FA | Logged in |
+| **UC4** | Verify 2FA Code | Citizen, Dispatcher | Enter 6-digit verification code | 2FA enabled, code sent |
+| **UC5** | Logout | Citizen, Dispatcher | Sign out and clear session | Logged in |
+| **UC6** | Create Emergency Alert | Citizen | Create SOS alert with location and services | Logged in, GPS enabled |
+| **UC7** | Add Alert Description | Citizen | Add text description and upload media | Alert created |
+| **UC8** | Track Alert Status | Citizen | Monitor alert status changes in real-time | Alert exists |
+| **UC9** | Receive Call | Citizen | Accept/decline incoming call from dispatcher | Alert active, dispatcher calls |
+| **UC10** | Chat with Dispatcher | Citizen | Send/receive real-time messages | Alert active |
+| **UC11** | View Dispatcher Location | Citizen | Track dispatcher's GPS location on map | Alert accepted |
+| **UC12** | Cancel Alert | Citizen | Cancel emergency alert before resolution | Alert pending/active |
+| **UC13** | View Alert History | Citizen | Browse past emergency alerts | Logged in |
+| **UC14** | Add Medical Info | Citizen | Enter medical information (encrypted) | Logged in |
+| **UC15** | Update Medical Info | Citizen | Modify existing medical information | Medical info exists |
+| **UC16** | View Medical Info | Citizen | View decrypted medical information | Medical info exists |
+| **UC17** | Update Profile | Citizen, Dispatcher | Modify name, phone, email | Logged in |
+| **UC18** | Change Password | Citizen, Dispatcher | Update account password | Logged in |
+| **UC19** | Configure 2FA | Citizen, Dispatcher | Enable/disable 2FA, change method | Logged in |
+| **UC20** | Search Facilities | Citizen | Find nearby hospitals, police, fire stations | GPS enabled |
+| **UC21** | View Facility Details | Citizen | See facility address, phone, hours | Facility selected |
+| **UC22** | Navigate to Facility | Citizen | Get directions to emergency facility | Facility selected, GPS enabled |
+| **UC23** | View Current Location | Citizen | Display current GPS coordinates on map | GPS enabled |
+| **UC24** | View Emergency Alerts | Dispatcher | See real-time feed of pending alerts | Logged in as dispatcher |
+| **UC25** | Accept Alert | Dispatcher | Accept and assign alert to self | Alert pending |
+| **UC26** | View Alert Details | Dispatcher | See alert location, services, media | Alert exists |
+| **UC27** | View Citizen Medical Info | Dispatcher | Access encrypted medical information | Alert accepted |
+| **UC28** | Initiate Call | Dispatcher | Start video/audio call to citizen | Alert accepted |
+| **UC29** | Chat with Citizen | Dispatcher | Send/receive real-time messages | Alert active |
+| **UC30** | Mark as Arrived | Dispatcher | Update status when arriving on scene | En route to site |
+| **UC31** | Mark as Resolved | Dispatcher | Close alert with resolution notes | On-site, situation handled |
+| **UC32** | View Alert History | Dispatcher | Browse all past alerts system-wide | Logged in as dispatcher |
+| **UC33** | View Analytics Dashboard | Dispatcher | See metrics, charts, statistics | Logged in as dispatcher |
+| **UC34** | View Total Alerts | Dispatcher | See alert count for time period | Analytics dashboard |
+| **UC35** | View Response Times | Dispatcher | See average response time metrics | Analytics dashboard |
+| **UC36** | View Success Rate | Dispatcher | See percentage of resolved alerts | Analytics dashboard |
+| **UC37** | View Top Dispatchers | Dispatcher | See leaderboard of top performers | Analytics dashboard |
+| **UC38** | Add Facility Pin | Dispatcher | Manually add emergency facility | Logged in as dispatcher |
+| **UC39** | View Facilities on Map | Dispatcher | See all facilities on map | Logged in as dispatcher |
+| **UC40** | Start Call | Dispatcher | Initiate video/audio call | Alert accepted |
+| **UC41** | Accept Call | Citizen, Dispatcher | Accept incoming call | Call ringing |
+| **UC42** | Decline Call | Citizen, Dispatcher | Reject incoming call | Call ringing |
+| **UC43** | Toggle Mute | Citizen, Dispatcher | Mute/unmute microphone | In active call |
+| **UC44** | Toggle Video | Citizen, Dispatcher | Enable/disable camera | In active call |
+| **UC45** | End Call | Citizen, Dispatcher | Terminate active call | In active call |
+| **UC46** | Send Notification | System | Send FCM push to dispatchers | Alert created |
+| **UC47** | Generate LiveKit Token | System | Create JWT for WebRTC connection | Call initiated |
+| **UC48** | Send Email Code | System | Send 2FA code via Resend API | User requests email 2FA |
+| **UC49** | Send SMS Code | System | Send 2FA code via Twilio API | User requests SMS 2FA |
+| **UC50** | Encrypt Medical Data | System | AES-256 encrypt before storage | Medical info saved |
+| **UC51** | Decrypt Medical Data | System | AES-256 decrypt for display | Medical info requested |
+| **UC52** | Calculate ETA | System | Compute dispatcher arrival time | Dispatcher en route |
+| **UC53** | Sync Location | System | Real-time GPS coordinate updates | Alert active |
+| **UC54** | Aggregate Analytics | System | Calculate metrics from alert data | Analytics requested |
+| **UC55** | Enforce Security Rules | System | Validate Firestore access permissions | Any database operation |
 
 ---
 
