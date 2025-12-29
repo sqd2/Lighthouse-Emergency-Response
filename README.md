@@ -29,6 +29,8 @@ Lighthouse is a comprehensive emergency response platform designed for final yea
 - Firebase account
 - Google Maps API key
 - LiveKit account (for video calls)
+- Twilio account (for SMS 2FA)
+- Resend account (for email 2FA)
 
 ### Installation
 
