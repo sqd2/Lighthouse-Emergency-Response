@@ -14,9 +14,7 @@ const admin = require("firebase-admin");
 const {AccessToken} = require("livekit-server-sdk");
 
 // Define environment variables (loaded from .env locally, set in Firebase for production)
-const LIVEKIT_URL = defineString("LIVEKIT_URL", {
-  default: "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud",
-});
+const LIVEKIT_URL = defineString("LIVEKIT_URL");
 const LIVEKIT_API_KEY = defineSecret("LIVEKIT_API_KEY");
 const LIVEKIT_API_SECRET = defineSecret("LIVEKIT_API_SECRET");
 
