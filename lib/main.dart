@@ -13,6 +13,7 @@ import 'screen/citizen_dashboard.dart';
 import 'models/call.dart';
 import 'widgets/incoming_call_dialog.dart';
 import 'services/livekit_service.dart';
+import 'services/two_factor_gate.dart';
 
 // Global navigator key for showing dialogs from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -276,10 +277,27 @@ class _AuthGateState extends State<AuthGate> {
           // Cancel listener when logged out
           _callListener?.cancel();
           _currentUserId = null;
+          TwoFactorGate.reset(); // Clear 2FA verification state
           return const LoginScreen();
         }
 
         final user = snapshot.data!;
+
+        // Check if 2FA verification is pending - block navigation until complete
+        if (TwoFactorGate.isVerifying) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Verifying two-factor authentication...'),
+                ],
+              ),
+            ),
+          );
+        }
 
         // TEMPORARILY DISABLED - Global call listener causing PWA crashes
         // TODO: Re-enable with better error handling
