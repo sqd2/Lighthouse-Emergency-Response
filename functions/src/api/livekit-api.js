@@ -9,25 +9,26 @@
  */
 
 const {onCall} = require("firebase-functions/v2/https");
+const {defineString, defineSecret} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const {AccessToken} = require("livekit-server-sdk");
 
-// LiveKit WebRTC configuration - loaded from environment variables
-const LIVEKIT_URL = process.env.LIVEKIT_URL || "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud";
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
-
-// Validate environment variables are set
-if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
-  console.error("[ERROR] LiveKit credentials not found in environment variables!");
-  console.error("Please set LIVEKIT_API_KEY and LIVEKIT_API_SECRET in functions/.env");
-}
+// Define environment variables (loaded from .env locally, set in Firebase for production)
+const LIVEKIT_URL = defineString("LIVEKIT_URL", {
+  default: "wss://lighthouse-webrtc-a5tfjg76.livekit.cloud",
+});
+const LIVEKIT_API_KEY = defineSecret("LIVEKIT_API_KEY");
+const LIVEKIT_API_SECRET = defineSecret("LIVEKIT_API_SECRET");
 
 /**
  * Cloud Function: Generate LiveKit access token for WebRTC calls
  * Callable function that verifies user authorization and generates token
  */
-exports.generateLiveKitToken = onCall(async (request) => {
+exports.generateLiveKitToken = onCall(
+    {
+      secrets: [LIVEKIT_API_KEY, LIVEKIT_API_SECRET],
+    },
+    async (request) => {
   try {
     // Get authenticated user
     const userId = request.auth?.uid;
@@ -89,7 +90,7 @@ exports.generateLiveKitToken = onCall(async (request) => {
     console.log(`[SUCCESS] User authorized for call`);
 
     // Generate LiveKit access token
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+    const at = new AccessToken(LIVEKIT_API_KEY.value(), LIVEKIT_API_SECRET.value(), {
       identity: userId,
       ttl: "2h", // Token valid for 2 hours
     });
@@ -109,10 +110,11 @@ exports.generateLiveKitToken = onCall(async (request) => {
 
     return {
       token: token,
-      serverUrl: LIVEKIT_URL,
+      serverUrl: LIVEKIT_URL.value(),
     };
   } catch (error) {
     console.error("[ERROR] Error generating LiveKit token:", error);
     throw new Error(`Failed to generate token: ${error.message}`);
   }
-});
+    },
+);
