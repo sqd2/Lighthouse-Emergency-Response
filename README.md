@@ -554,6 +554,7 @@ This project demonstrates:
 - Google Maps API
 - Google Places API
 - Google Directions API
+- LiveKit API (WebRTC)
 - Twilio API (SMS)
 - Resend API (Email)
 
