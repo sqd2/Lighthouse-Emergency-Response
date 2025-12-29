@@ -554,6 +554,8 @@ This project demonstrates:
 - Google Maps API
 - Google Places API
 - Google Directions API
+- Twilio API (SMS)
+- Resend API (Email)
 
 ---
 
