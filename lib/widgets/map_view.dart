@@ -111,6 +111,10 @@ class _MapViewState extends State<MapView> {
   LatLng? _userPosition;
   LatLng? _tempPinPosition;
 
+  // Camera movement tracking to detect user interaction
+  bool _userHasPanned = false;
+  bool _isCameraMovingProgrammatically = false;
+
   // Custom marker icons
   BitmapDescriptor? _userLocationIcon;
   BitmapDescriptor? _sosAlertIcon;
@@ -423,6 +427,17 @@ class _MapViewState extends State<MapView> {
     }
   }
 
+  /// Called when camera movement starts - detect user panning
+  void _onCameraMoveStarted() {
+    // Only mark as user panning if this wasn't triggered programmatically
+    if (!_isCameraMovingProgrammatically && widget.followUserLocation) {
+      setState(() {
+        _userHasPanned = true;
+      });
+      print('[MapView] User manually panned - disabling auto-follow');
+    }
+  }
+
   void _clearTempPinInternal() {
     setState(() {
       _tempPinPosition = null;
@@ -432,11 +447,18 @@ class _MapViewState extends State<MapView> {
 
   void _recenterOnUserLocationInternal() {
     if (_userPosition != null) {
+      setState(() {
+        _userHasPanned = false; // Re-enable auto-follow
+      });
+      _isCameraMovingProgrammatically = true;
       _mapController?.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: _userPosition!, zoom: 15.0),
         ),
       );
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isCameraMovingProgrammatically = false;
+      });
     }
   }
 
@@ -478,13 +500,17 @@ class _MapViewState extends State<MapView> {
       _userPosition = mockPos;
       _currentDisplayPosition = mockPos;
     });
-    // Only animate camera if followUserLocation is enabled
-    if (widget.followUserLocation) {
+    // Only animate camera if followUserLocation is enabled AND user hasn't manually panned
+    if (widget.followUserLocation && !_userHasPanned) {
+      _isCameraMovingProgrammatically = true;
       _mapController?.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: mockPos, zoom: 13.0),
         ),
       );
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isCameraMovingProgrammatically = false;
+      });
     }
     _updateMarkers();
   }
@@ -536,9 +562,13 @@ class _MapViewState extends State<MapView> {
       }
     }
 
-    // Only animate camera if followUserLocation is enabled
-    if (widget.followUserLocation) {
+    // Only animate camera if followUserLocation is enabled AND user hasn't manually panned
+    if (widget.followUserLocation && !_userHasPanned) {
+      _isCameraMovingProgrammatically = true;
       _mapController?.animateCamera(CameraUpdate.newLatLng(newPosition));
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _isCameraMovingProgrammatically = false;
+      });
     }
 
     if (progress >= 1.0) {
@@ -575,13 +605,17 @@ class _MapViewState extends State<MapView> {
         _targetPosition = newTarget;
         _userPosition = newTarget;
       });
-      // Only animate camera on initial position if followUserLocation is enabled
-      if (widget.followUserLocation) {
+      // Only animate camera on initial position if followUserLocation is enabled AND user hasn't manually panned
+      if (widget.followUserLocation && !_userHasPanned) {
+        _isCameraMovingProgrammatically = true;
         _mapController?.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(target: newTarget, zoom: 15.0),
           ),
         );
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _isCameraMovingProgrammatically = false;
+        });
       }
       _updateMarkers();
       return;
@@ -806,6 +840,7 @@ class _MapViewState extends State<MapView> {
           mapToolbarEnabled: true,
           zoomControlsEnabled: true,
           onTap: _onMapTapped,
+          onCameraMoveStarted: _onCameraMoveStarted,
           mapType: MapType.normal,
           // No gesture recognizers - let map use native behavior
           // gestureRecognizers removed to allow default single-finger panning
