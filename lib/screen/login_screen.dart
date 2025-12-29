@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/validators.dart';
 import '../services/two_factor_service.dart';
+import '../services/two_factor_gate.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -85,7 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
             return;
           }
 
-          // Keep user signed in but verify 2FA
+          // Set 2FA pending flag to block navigation
+          TwoFactorGate.setVerifying(true);
           setState(() => _isLoading = false);
 
           // Verify 2FA
@@ -95,10 +97,14 @@ class _LoginScreenState extends State<LoginScreen> {
             twoFactorSettings['totpSecret'] as String?,
           );
 
+          // Clear 2FA pending flag
+          TwoFactorGate.setVerifying(false);
+
           if (verified) {
             // 2FA verified - user is already signed in, AuthGate will handle navigation
             if (!mounted) return;
-            // Navigation will happen automatically via AuthGate
+            // Trigger auth state refresh to allow navigation
+            setState(() => _isLoading = false);
           } else {
             // 2FA failed - sign out the user
             await _auth.signOut();
