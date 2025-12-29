@@ -26,6 +26,7 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
   Timer? _timeoutTimer;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -57,6 +58,9 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
   }
 
   Future<void> _acceptCall() async {
+    if (_isProcessing) return;
+    _isProcessing = true;
+
     _timeoutTimer?.cancel();
 
     // Show loading state
@@ -122,6 +126,9 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
   }
 
   Future<void> _rejectCall() async {
+    if (_isProcessing) return;
+    _isProcessing = true;
+
     _timeoutTimer?.cancel();
 
     await _liveKitService.rejectCall(widget.alertId, widget.call.id);

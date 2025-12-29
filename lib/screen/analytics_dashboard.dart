@@ -268,8 +268,15 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard> {
       'cancelled': Colors.grey,
     };
 
+    final statusLabels = {
+      'pending': 'Pending',
+      'active': 'Active',
+      'arrived': 'Arrived',
+      'resolved': 'Resolved',
+      'cancelled': 'Cancelled',
+    };
+
     return Container(
-      height: 250,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -282,30 +289,68 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard> {
           ),
         ],
       ),
-      child: PieChart(
-        PieChartData(
-          sections: _alertsByStatus.entries
-              .where((entry) => entry.value > 0)
-              .map((entry) {
-            final percentage = (_totalAlerts > 0)
-                ? (entry.value / _totalAlerts * 100)
-                : 0.0;
+      child: Column(
+        children: [
+          SizedBox(
+            height: 200,
+            child: PieChart(
+              PieChartData(
+                sections: _alertsByStatus.entries
+                    .where((entry) => entry.value > 0)
+                    .map((entry) {
+                  final percentage = (_totalAlerts > 0)
+                      ? (entry.value / _totalAlerts * 100)
+                      : 0.0;
 
-            return PieChartSectionData(
-              value: entry.value.toDouble(),
-              title: '${percentage.toStringAsFixed(0)}%',
-              color: statusColors[entry.key] ?? Colors.grey,
-              radius: 100,
-              titleStyle: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+                  return PieChartSectionData(
+                    value: entry.value.toDouble(),
+                    title: '${percentage.toStringAsFixed(0)}%',
+                    color: statusColors[entry.key] ?? Colors.grey,
+                    radius: 80,
+                    titleStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  );
+                }).toList(),
+                sectionsSpace: 2,
+                centerSpaceRadius: 0,
               ),
-            );
-          }).toList(),
-          sectionsSpace: 2,
-          centerSpaceRadius: 0,
-        ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: statusColors.entries
+                .where((entry) => _alertsByStatus.containsKey(entry.key) && _alertsByStatus[entry.key]! > 0)
+                .map((entry) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: entry.value,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${statusLabels[entry.key]} (${_alertsByStatus[entry.key]})',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

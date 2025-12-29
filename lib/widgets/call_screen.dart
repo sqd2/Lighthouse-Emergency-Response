@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' as livekit;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/call.dart';
 import '../services/livekit_service.dart';
 import '../main.dart' show setInCall;
@@ -33,10 +34,14 @@ class _CallScreenState extends State<CallScreen> {
   bool _isEndingCall = false; // Track if we're the one ending the call
   StreamSubscription? _callStateSubscription;
   StreamSubscription? _callDocSubscription; // Listen to call document changes
+  String? _otherUserName; // Name of the other user in the call
 
   @override
   void initState() {
     super.initState();
+
+    // Fetch other user's name
+    _fetchOtherUserName();
 
     // Mark as in call to prevent incoming call dialogs
     setInCall(true);
@@ -145,6 +150,35 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  Future<void> _fetchOtherUserName() async {
+    try {
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId == null) {
+        setState(() {
+          _otherUserName = 'Unknown User';
+        });
+        return;
+      }
+
+      // Determine which name to show based on current user
+      final isReceiver = currentUserId == widget.call.receiverId;
+      final otherUserName = isReceiver
+          ? widget.call.callerName
+          : (widget.call.receiverName ?? 'Unknown User');
+
+      debugPrint('[CallScreen] Current user: $currentUserId, Is receiver: $isReceiver, Other user name: $otherUserName');
+
+      setState(() {
+        _otherUserName = otherUserName;
+      });
+    } catch (e) {
+      debugPrint('[CallScreen] Error determining other user name: $e');
+      setState(() {
+        _otherUserName = 'Unknown User';
+      });
+    }
+  }
+
   Future<void> _joinRoom() async {
     // Prevent duplicate join attempts
     if (_isJoining || _liveKitService.room != null) {
@@ -223,9 +257,9 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isVideoCall = widget.call.type == Call.TYPE_VIDEO;
     final remoteVideoTrack = _liveKitService.remoteVideoTrack;
     final localVideoTrack = _liveKitService.localVideoTrack;
+    final hasVideo = _liveKitService.isVideoEnabled || remoteVideoTrack != null;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -233,7 +267,7 @@ class _CallScreenState extends State<CallScreen> {
         child: Stack(
           children: [
             // Remote video (full screen)
-            if (isVideoCall && remoteVideoTrack != null)
+            if (remoteVideoTrack != null)
               Positioned.fill(
                 child: livekit.VideoTrackRenderer(
                   remoteVideoTrack,
@@ -260,7 +294,7 @@ class _CallScreenState extends State<CallScreen> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      widget.call.callerName,
+                      _otherUserName ?? 'Connecting...',
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -282,7 +316,7 @@ class _CallScreenState extends State<CallScreen> {
               ),
 
             // Local video (picture-in-picture)
-            if (isVideoCall && localVideoTrack != null && _liveKitService.isVideoEnabled)
+            if (localVideoTrack != null && _liveKitService.isVideoEnabled)
               Positioned(
                 top: 16,
                 right: 16,
@@ -322,7 +356,7 @@ class _CallScreenState extends State<CallScreen> {
                 child: Column(
                   children: [
                     Text(
-                      widget.call.callerName,
+                      _otherUserName ?? 'Connecting...',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -372,32 +406,13 @@ class _CallScreenState extends State<CallScreen> {
                       onPressed: _liveKitService.toggleMute,
                     ),
 
-                    // Video toggle (only for video calls)
-                    if (isVideoCall)
-                      _CallControlButton(
-                        icon: _liveKitService.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
-                        label: _liveKitService.isVideoEnabled ? 'Video Off' : 'Video On',
-                        backgroundColor: !_liveKitService.isVideoEnabled ? Colors.red : Colors.white.withOpacity(0.2),
-                        onPressed: _liveKitService.toggleVideo,
-                      ),
-
-                    // Switch camera (only for video calls)
-                    if (isVideoCall && _liveKitService.isVideoEnabled)
-                      _CallControlButton(
-                        icon: Icons.flip_camera_ios,
-                        label: 'Flip',
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        onPressed: _liveKitService.switchCamera,
-                      ),
-
-                    // Speaker toggle (audio calls only)
-                    if (!isVideoCall)
-                      _CallControlButton(
-                        icon: _liveKitService.isSpeakerOn ? Icons.volume_up : Icons.volume_down,
-                        label: _liveKitService.isSpeakerOn ? 'Speaker' : 'Earpiece',
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        onPressed: _liveKitService.toggleSpeaker,
-                      ),
+                    // Video toggle (switch between audio and video mode)
+                    _CallControlButton(
+                      icon: _liveKitService.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+                      label: _liveKitService.isVideoEnabled ? 'Audio Only' : 'Video',
+                      backgroundColor: !_liveKitService.isVideoEnabled ? Colors.white.withOpacity(0.2) : Colors.white.withOpacity(0.2),
+                      onPressed: _liveKitService.toggleVideo,
+                    ),
 
                     // End call button
                     _CallControlButton(
