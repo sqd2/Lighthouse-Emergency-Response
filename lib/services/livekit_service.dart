@@ -166,6 +166,22 @@ class LiveKitService extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('[LiveKitService] Error accepting call: $e');
+
+      // If join failed, mark call as rejected
+      try {
+        await FirebaseFirestore.instance
+            .collection('emergency_alerts')
+            .doc(alertId)
+            .collection('calls')
+            .doc(call.id)
+            .update({
+          'status': Call.STATUS_REJECTED,
+          'endedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (updateError) {
+        debugPrint('[LiveKitService] Error updating call status after join failure: $updateError');
+      }
+
       return false;
     }
   }
