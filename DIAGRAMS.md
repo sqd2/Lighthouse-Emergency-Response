@@ -349,17 +349,16 @@ graph TB
 graph LR
     Citizen((Citizen<br/>User))
     Dispatcher((Dispatcher<br/>User))
-    System((System<br/>Automated))
 
     style Citizen fill:#4285F4,color:#fff
     style Dispatcher fill:#9C27B0,color:#fff
-    style System fill:#34A853,color:#fff
 ```
 
 **Actor Descriptions:**
 - **Citizen User**: End-user who creates emergency alerts and interacts with dispatchers
 - **Dispatcher User**: Emergency response personnel who manage and respond to alerts
-- **System (Automated)**: Backend processes that handle notifications, encryption, tokens, and analytics
+
+**Note:** System automated processes (encryption, notifications, token generation, etc.) are shown as dependencies using dotted lines in the diagrams below. They are not actors but rather internal system behaviors triggered by user actions.
 
 ---
 
@@ -646,61 +645,6 @@ graph TB
 
 ---
 
-### 8. System Automated Use Cases
-
-```mermaid
-graph TB
-    System((System<br/>Automated))
-
-    UC46[Send FCM Push Notification]
-    UC47[Generate LiveKit Token]
-    UC48[Send 2FA Email Code]
-    UC49[Send 2FA SMS Code]
-    UC50[Encrypt Medical Data]
-    UC51[Decrypt Medical Data]
-    UC52[Calculate Real-time ETA]
-    UC53[Sync Location Updates]
-    UC54[Aggregate Analytics Data]
-    UC55[Enforce Security Rules]
-
-    System --> UC46
-    System --> UC47
-    System --> UC48
-    System --> UC49
-    System --> UC50
-    System --> UC51
-    System --> UC52
-    System --> UC53
-    System --> UC54
-    System --> UC55
-
-    UC47 -.->|uses| LiveKit[LiveKit Cloud API]
-    UC48 -.->|uses| Resend[Resend Email API]
-    UC49 -.->|uses| Twilio[Twilio SMS API]
-    UC50 -.->|uses| AES[AES-256-CBC Encryption]
-    UC51 -.->|uses| AES
-    UC52 -.->|uses| Directions[Google Directions API]
-    UC55 -.->|uses| Firestore[Firestore Security Rules]
-
-    style System fill:#34A853,color:#fff
-    style UC46 fill:#f9f9f9
-    style UC47 fill:#f9f9f9
-    style UC48 fill:#f9f9f9
-    style UC49 fill:#f9f9f9
-    style UC50 fill:#f9f9f9
-    style UC51 fill:#f9f9f9
-    style UC52 fill:#f9f9f9
-    style UC53 fill:#f9f9f9
-    style UC54 fill:#f9f9f9
-    style UC55 fill:#f9f9f9
-    style LiveKit fill:#00D4AA,color:#fff
-    style Resend fill:#4285F4,color:#fff
-    style Twilio fill:#34A853,color:#fff
-    style AES fill:#EA4335,color:#fff
-    style Directions fill:#FBBC04,color:#000
-    style Firestore fill:#FFA000,color:#000
-```
-
 ### Use Case Descriptions Table
 
 | Use Case ID | Use Case Name | Actor | Description | Preconditions |
@@ -750,16 +694,10 @@ graph TB
 | **UC43** | Toggle Mute | Citizen, Dispatcher | Mute/unmute microphone | In active call |
 | **UC44** | Toggle Video | Citizen, Dispatcher | Enable/disable camera | In active call |
 | **UC45** | End Call | Citizen, Dispatcher | Terminate active call | In active call |
-| **UC46** | Send Notification | System | Send FCM push to dispatchers | Alert created |
-| **UC47** | Generate LiveKit Token | System | Create JWT for WebRTC connection | Call initiated |
-| **UC48** | Send Email Code | System | Send 2FA code via Resend API | User requests email 2FA |
-| **UC49** | Send SMS Code | System | Send 2FA code via Twilio API | User requests SMS 2FA |
-| **UC50** | Encrypt Medical Data | System | AES-256 encrypt before storage | Medical info saved |
-| **UC51** | Decrypt Medical Data | System | AES-256 decrypt for display | Medical info requested |
-| **UC52** | Calculate ETA | System | Compute dispatcher arrival time | Dispatcher en route |
-| **UC53** | Sync Location | System | Real-time GPS coordinate updates | Alert active |
-| **UC54** | Aggregate Analytics | System | Calculate metrics from alert data | Analytics requested |
-| **UC55** | Enforce Security Rules | System | Validate Firestore access permissions | Any database operation |
+
+**Total Use Cases:** 45 use cases across 7 functional areas
+
+**Note:** System automated processes (encryption, notifications, token generation, location sync, analytics, security rules) are not separate use cases but rather internal system behaviors that support the user-facing use cases listed above. These are shown as dependencies in the diagrams with dotted lines.
 
 ---
 
