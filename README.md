@@ -304,23 +304,6 @@ flutter test --coverage
 
 ---
 
-## 📊 Project Statistics
-
-**Total Lines of Code: 28,333**
-
-- **Dart (Core Application):** 16,782 lines across 60 files
-- **JavaScript (Firebase Functions):** 1,337 lines across 14 files
-- **Documentation:** 7,117 lines across 16 Markdown files
-- **Platform Code:** 1,754 lines (C++, Swift, Kotlin, XML)
-- **Configuration:** 1,343 lines (JSON, YAML, CMake, Gradle, Shell)
-
-For detailed statistics, see [LINES_OF_CODE.md](LINES_OF_CODE.md) or run:
-```bash
-./count_lines.sh
-```
-
----
-
 ## 📁 Project Structure
 
 ```
