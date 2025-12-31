@@ -4,7 +4,7 @@ This document provides a comprehensive analysis of the codebase size for the Lig
 
 ## Summary
 
-**Total Lines of Code: 28,213**
+**Total Lines of Code: 28,333**
 
 This count includes all source code files but excludes:
 - Build artifacts and directories (build/, .dart_tool/, node_modules/)
@@ -17,7 +17,7 @@ This count includes all source code files but excludes:
 | Language | Files | Blank Lines | Comments | Code Lines |
 |----------|-------|-------------|----------|------------|
 | Dart | 60 | 1,873 | 1,052 | 16,782 |
-| Markdown | 15 | 1,794 | 0 | 7,027 |
+| Markdown | 16 | 1,823 | 0 | 7,117 |
 | JavaScript | 14 | 295 | 474 | 1,337 |
 | XML | 21 | 10 | 41 | 847 |
 | C++ | 8 | 124 | 70 | 501 |
@@ -29,10 +29,11 @@ This count includes all source code files but excludes:
 | Gradle | 3 | 13 | 10 | 77 |
 | Windows Resource | 1 | 23 | 29 | 69 |
 | YAML | 2 | 16 | 87 | 51 |
+| Bourne Shell | 1 | 9 | 3 | 30 |
 | DOS Batch | 1 | 0 | 0 | 10 |
 | Properties | 2 | 0 | 0 | 9 |
 | Kotlin | 1 | 2 | 0 | 3 |
-| **TOTAL** | **161** | **4,381** | **1,971** | **28,213** |
+| **TOTAL** | **163** | **4,419** | **1,974** | **28,333** |
 
 ## Breakdown by Component
 
@@ -62,16 +63,16 @@ This count includes all source code files but excludes:
 - **Windows:** C++, CMake build files
 
 ### Documentation
-- **Files:** 15 Markdown files
-- **Lines:** 7,027
-- **Description:** Comprehensive documentation including architecture, setup guides, session summaries, and feature documentation
+- **Files:** 16 Markdown files
+- **Lines:** 7,117
+- **Description:** Comprehensive documentation including architecture, setup guides, session summaries, feature documentation, and LOC analysis
 
 ## Key Statistics
 
-- **Primary Language:** Dart (59.5% of code)
+- **Primary Language:** Dart (59.2% of code)
 - **Code-to-Comment Ratio:** 14.3:1
 - **Test Coverage:** 637 test lines for 16,145 application lines (~3.9% test ratio)
-- **Documentation:** 7,027 lines of markdown documentation
+- **Documentation:** 7,117 lines of markdown documentation
 
 ## How to Update This Report
 
