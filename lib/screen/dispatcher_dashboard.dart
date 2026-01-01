@@ -285,24 +285,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         throw Exception('User not authenticated');
       }
 
-      // Check if dispatcher already has an active alert
-      print('[CHECK] Checking for existing active alerts...');
-      final activeAlertsSnapshot = await FirebaseFirestore.instance
-          .collection('emergency_alerts')
-          .where('acceptedBy', isEqualTo: user.uid)
-          .where('status', whereIn: [
-            EmergencyAlert.STATUS_ACTIVE,
-            EmergencyAlert.STATUS_ARRIVED,
-          ])
-          .limit(1)
-          .get();
-
-      if (activeAlertsSnapshot.docs.isNotEmpty) {
-        print('[BLOCKED] Dispatcher already has an active alert');
-        throw Exception('You already have an active alert. Please resolve it before accepting a new one.');
-      }
-
-      print('[OK] No active alerts found. Proceeding with acceptance...');
+      print('[OK] Starting location sharing for alert...');
 
       //Get initial position
       final initialPosition = await Geolocator.getCurrentPosition(
@@ -311,15 +294,11 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
 
       print('[LOCATION] Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}');
 
-      // Update alert with acceptance info AND location
+      // Update alert with initial dispatcher location (alert already accepted)
       await FirebaseFirestore.instance
           .collection('emergency_alerts')
           .doc(alertId)
           .update({
-        'status': EmergencyAlert.STATUS_ACTIVE,
-        'acceptedBy': user.uid,
-        'acceptedByEmail': user.email ?? 'Unknown',
-        'acceptedAt': FieldValue.serverTimestamp(),
         'dispatcherLocation': GeoPoint(initialPosition.latitude, initialPosition.longitude),
         'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
       });

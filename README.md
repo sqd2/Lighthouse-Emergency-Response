@@ -1,6 +1,6 @@
-# 🚨 Lighthouse Emergency Response System
+# Lighthouse Emergency Response
 
-> A cross-platform emergency response system connecting citizens with dispatchers in real-time.
+> A Map-Based Platform to Assist in Emergency Response Through Route Suggestion and Geographic Visibility
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.9.2-blue.svg)](https://flutter.dev/)
 [![Firebase](https://img.shields.io/badge/Firebase-Latest-orange.svg)](https://firebase.google.com/)
@@ -8,21 +8,21 @@
 
 ---
 
-## 📋 Overview
+## Overview
 
-Lighthouse is a comprehensive emergency response platform designed for final year academic project evaluation. Built with Flutter for cross-platform compatibility and Firebase for real-time capabilities.
+Lighthouse is a emergency response platform designed as a final year academic project. Built with Flutter for cross-platform compatibility and Firebase for real-time capabilities.
 
 ### Key Features
-- 🆘 **Real-time Emergency Alerts** with GPS tracking
-- 📞 **WebRTC Video/Voice Calls** for direct communication
-- 💊 **End-to-End Encrypted Medical Information**
-- 🔒 **Two-Factor Authentication** (TOTP + Email)
-- 🗺️ **Interactive Maps** with route navigation
-- 📱 **Multi-platform**: Web (PWA), Android, iOS, Desktop
+- **Real-time Emergency Alerts** with GPS tracking
+- **WebRTC Video/Voice Calls** for direct communication
+- **End-to-End Encrypted Medical Information**
+- **Two-Factor Authentication** (TOTP + Email)
+- **Interactive Maps** with route navigation
+- **Multi-platform**: Web (PWA), Android, iOS, Desktop
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Flutter SDK 3.9.2 or higher
@@ -35,10 +35,6 @@ Lighthouse is a comprehensive emergency response platform designed for final yea
 ### Installation
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/lighthouse.git
-cd lighthouse
-
 # Set up environment variables
 cp .env.example .env
 # Edit .env file and add your API keys
@@ -55,7 +51,7 @@ flutter run -d chrome
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### 1. Environment Variables
 
@@ -266,7 +262,7 @@ echo -n "your_api_secret" | firebase functions:secrets:set LIVEKIT_API_SECRET
 
 ---
 
-## 🏃 Running the Application
+## Running the Application
 
 ```bash
 # Web (PWA)
@@ -287,7 +283,7 @@ flutter build web --release
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests (42 tests)
@@ -298,13 +294,13 @@ flutter test --coverage
 ```
 
 ### Test Coverage
-- ✅ **Model Tests**: 18 tests (MedicalInfo, EmergencyAlert)
-- ✅ **Validator Tests**: 24 tests (Email, Password, Phone, Name)
+- **Model Tests**: 18 tests (MedicalInfo, EmergencyAlert)
+- **Validator Tests**: 24 tests (Email, Password, Phone, Name)
 - **Total**: 42 tests passing
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 lib/
@@ -330,9 +326,7 @@ lib/
 
 ---
 
-## 🏗️ Architecture
-
-For detailed architecture documentation with diagrams, see [ARCHITECTURE.md](ARCHITECTURE.md).
+## Architecture
 
 ### High-Level Overview
 
@@ -356,7 +350,7 @@ For detailed architecture documentation with diagrams, see [ARCHITECTURE.md](ARC
 
 ---
 
-## 🔒 Security
+## Security
 
 ### Implemented Measures
 1. **Authentication**
@@ -390,7 +384,7 @@ For detailed architecture documentation with diagrams, see [ARCHITECTURE.md](ARC
 
 ---
 
-## 🌐 Deployment
+## Deployment
 
 ### Firebase Hosting (Web PWA)
 
@@ -446,7 +440,7 @@ open ios/Runner.xcworkspace
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -489,7 +483,7 @@ cd ..
 
 ---
 
-## 📊 Features Breakdown
+## Features Breakdown
 
 ### Citizen Dashboard
 - Emergency SOS button with service selection
@@ -511,25 +505,19 @@ cd ..
 
 ---
 
-## 🎓 Academic Documentation
+## Academic Documentation
 
 This project demonstrates:
-- ✅ **Software Engineering**: Service-oriented architecture, separation of concerns
-- ✅ **Security**: End-to-end encryption, 2FA, secure authentication
-- ✅ **Real-time Systems**: WebRTC, Firestore real-time sync
-- ✅ **Cross-platform Development**: Flutter multi-platform support
-- ✅ **Testing**: 42 unit tests with comprehensive coverage
-- ✅ **Documentation**: Architecture diagrams, code comments, README
-
-### Repository Contents
-- `ARCHITECTURE.md`: Comprehensive architecture documentation with 8 Mermaid diagrams
-- `test/`: Unit tests for models and validators (42 tests)
-- `lib/`: Well-structured codebase with clear separation of concerns
-- Commit history showing iterative development
+- **Software Engineering**: Service-oriented architecture, separation of concerns
+- **Security**: End-to-end encryption, 2FA, secure authentication
+- **Real-time Systems**: WebRTC, Firestore real-time sync
+- **Cross-platform Development**: Flutter multi-platform support
+- **Testing**: 42 unit tests with comprehensive coverage
+- **Documentation**: Comprehensive code comments and README
 
 ---
 
-## 📚 Technology Stack
+## Technology Stack
 
 **Frontend:**
 - Flutter 3.9.2 (Dart)
@@ -560,36 +548,16 @@ This project demonstrates:
 
 ---
 
-## 📞 Support & Contact
+## License
 
-For academic inquiries or project evaluation:
-- **Documentation**: See `ARCHITECTURE.md` for technical details
-- **Tests**: Run `flutter test` to verify functionality
-- **Demo**: Deploy to web with `flutter build web`
-
----
-
-## 🙏 Acknowledgments
-
-- Flutter Team for the framework
-- Firebase for backend infrastructure
-- LiveKit for WebRTC services
-- Google Maps for mapping services
-- University supervisor for guidance
-
----
-
-## 📄 License
-
-Academic Project - Final Year 2024/2025
+Academic Project - Final Year 2025/2026
 
 All rights reserved for academic evaluation purposes.
 
 ---
 
 **Version:** 1.0.0
-**Last Updated:** December 29, 2025
+**Last Updated:** January 1, 2026
 **Flutter:** 3.9.2
 **Dart:** 3.9.2
 
-Made with ❤️ for Final Year Project

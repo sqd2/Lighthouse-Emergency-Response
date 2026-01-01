@@ -517,8 +517,9 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
     final createdAt = (widget.alertData['createdAt'] as Timestamp?)?.toDate();
     final arrivedAt = (widget.alertData['arrivedAt'] as Timestamp?)?.toDate();
 
-    // Calculate distance if dispatcher location is available
+    // Calculate distance and ETA if dispatcher location is available
     String? distance;
+    String? eta;
     if (dispatcherLocation != null && alertLocation != null) {
       final distanceMeters = PlacesService.calculateDistance(
         dispatcherLocation.latitude,
@@ -526,10 +527,24 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
         alertLocation.latitude,
         alertLocation.longitude,
       );
+
+      // Format distance
       if (distanceMeters < 1000) {
         distance = '${distanceMeters.round()}m away';
       } else {
         distance = '${(distanceMeters / 1000).toStringAsFixed(1)}km away';
+      }
+
+      // Calculate ETA (assuming average emergency response speed of 40 km/h)
+      final distanceKm = distanceMeters / 1000;
+      final etaMinutes = (distanceKm / 40 * 60).round(); // 40 km/h = 0.667 km/min
+
+      if (etaMinutes < 1) {
+        eta = 'arriving soon';
+      } else if (etaMinutes == 1) {
+        eta = '1 min';
+      } else {
+        eta = '$etaMinutes mins';
       }
     }
 
@@ -624,7 +639,7 @@ class _ActiveSOSBannerState extends State<ActiveSOSBanner> {
                       ),
                       if (isAccepted && distance != null && !isArrived)
                         Text(
-                          distance,
+                          eta != null ? '$distance - $eta' : distance,
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.green.shade900,

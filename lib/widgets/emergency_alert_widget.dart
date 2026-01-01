@@ -629,12 +629,13 @@ class _EmergencyAlertSheetState extends State<EmergencyAlertSheet> {
 
                   const SizedBox(height: 16),
 
-                  // Medical Information
-                  MedicalInfoDisplay(
-                    encryptedMedicalData: alertData?['medicalInfo'] as Map<String, dynamic>?,
-                  ),
-
-                  const SizedBox(height: 16),
+                  // Medical Information (only visible to dispatcher who accepted)
+                  if (acceptedByMe)
+                    MedicalInfoDisplay(
+                      encryptedMedicalData: alertData?['medicalInfo'] as Map<String, dynamic>?,
+                    ),
+                  if (acceptedByMe)
+                    const SizedBox(height: 16),
 
                   // Navigate button
                   if (widget.userLocation != null)

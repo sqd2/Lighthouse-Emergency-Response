@@ -248,7 +248,7 @@ class _MedicalInfoDisplayState extends State<MedicalInfoDisplay> {
                   // Allergies (Critical - Red)
                   if (_medicalInfo!.allergies.isNotEmpty) ...[
                     _buildSection(
-                      title: 'Allergies [WARN]',
+                      title: 'Allergies',
                       icon: Icons.warning,
                       iconColor: Colors.red.shade700,
                       children: [
