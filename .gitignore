@@ -58,3 +58,12 @@ package-lock.json
 
 # Claude Code
 .claude/
+
+# Documentation and scripts (unrelated to program)
+*.docx
+~$*.docx
+ch4_*.py
+expand_4_1_intro.py
+concise_intro_4_1.txt
+expanded_intro_text.txt
+nul

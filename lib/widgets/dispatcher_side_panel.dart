@@ -488,6 +488,10 @@ class _DispatcherSidePanelState extends State<DispatcherSidePanel> {
   }
 
   Future<void> _acceptPendingAlert(EmergencyAlert alert) async {
+    print('===== ACCEPT PENDING ALERT CLICKED =====');
+    print('Alert ID: ${alert.id}');
+    print('Alert from: ${alert.userEmail}');
+
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -506,6 +510,8 @@ class _DispatcherSidePanelState extends State<DispatcherSidePanel> {
         ],
       ),
     );
+
+    print('User confirmed: $confirmed');
 
     if (confirmed == true && mounted) {
       // Show loading dialog
@@ -526,7 +532,66 @@ class _DispatcherSidePanelState extends State<DispatcherSidePanel> {
       );
 
       try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          throw Exception('Not authenticated');
+        }
+
+        print('[PENDING TAB] User: ${user.email}');
+
+        // PREVENT MULTIPLE ACTIVE ALERTS
+        // Check if dispatcher already has an active alert
+        print('[PENDING TAB] Checking for existing active alerts...');
+        final activeAlertsSnapshot = await FirebaseFirestore.instance
+            .collection('emergency_alerts')
+            .where('acceptedBy', isEqualTo: user.uid)
+            .where('status', whereIn: [
+              EmergencyAlert.STATUS_ACTIVE,
+              EmergencyAlert.STATUS_ARRIVED,
+            ])
+            .limit(1)
+            .get();
+
+        print('[PENDING TAB] Active alerts found: ${activeAlertsSnapshot.docs.length}');
+
+        if (activeAlertsSnapshot.docs.isNotEmpty) {
+          print('[PENDING TAB] Blocking - dispatcher already has active alert');
+          if (!mounted) return;
+          Navigator.pop(context); // Close loading dialog
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'You already have an active alert. Please resolve it before accepting a new one.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        print('[PENDING TAB] OK - proceeding with acceptance');
+
+        // First, accept the alert (update status and acceptedBy fields)
+        print('[PENDING TAB] Updating Firestore...');
+        await FirebaseFirestore.instance
+            .collection('emergency_alerts')
+            .doc(alert.id)
+            .update({
+          'status': EmergencyAlert.STATUS_ACTIVE,
+          'acceptedBy': user.uid,
+          'acceptedByEmail': user.email ?? 'Unknown',
+          'acceptedAt': FieldValue.serverTimestamp(),
+        });
+
+        print('[PENDING TAB] Alert accepted in Firestore');
+
+        // Then start location sharing
+        print('[PENDING TAB] Starting location sharing...');
         await widget.onAcceptAlert(alert.id);
+
+        print('[PENDING TAB] Location sharing started');
 
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
@@ -539,7 +604,12 @@ class _DispatcherSidePanelState extends State<DispatcherSidePanel> {
             ),
           );
         }
-      } catch (e) {
+
+        print('[PENDING TAB] ===== ACCEPT COMPLETE =====');
+      } catch (e, stackTrace) {
+        print('[PENDING TAB] ERROR: $e');
+        print('[PENDING TAB] Stack trace: $stackTrace');
+
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
 
@@ -547,6 +617,7 @@ class _DispatcherSidePanelState extends State<DispatcherSidePanel> {
             SnackBar(
               content: Text('Failed to accept alert: $e'),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
             ),
           );
         }

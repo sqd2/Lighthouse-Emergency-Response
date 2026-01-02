@@ -74,11 +74,22 @@ service cloud.firestore {
       // Owners can read their own alerts
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
 
-      // Owners can update their own alerts (only to cancel)
+      // Owners can update their own alerts (cancel OR update details)
       allow update: if isAuthenticated() &&
                        resource.data.userId == request.auth.uid &&
-                       request.resource.data.status == 'cancelled' &&
-                       isValidStatusTransition(resource.data.status, request.resource.data.status);
+                       (
+                         // Option 1: Cancel the alert
+                         (request.resource.data.status == 'cancelled' &&
+                          isValidStatusTransition(resource.data.status, request.resource.data.status))
+                         ||
+                         // Option 2: Update services/description (status unchanged, not resolved/cancelled)
+                         (request.resource.data.status == resource.data.status &&
+                          resource.data.status != 'resolved' &&
+                          resource.data.status != 'cancelled' &&
+                          // If dispatcher has accepted (acceptedBy is not null), prevent changing services
+                          ((!('acceptedBy' in resource.data) || resource.data.acceptedBy == null) ||
+                           request.resource.data.services == resource.data.services))
+                       );
 
       // Dispatchers can read all alerts
       allow read: if isDispatcher();
