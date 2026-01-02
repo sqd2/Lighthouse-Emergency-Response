@@ -32,28 +32,36 @@ Lighthouse is a emergency response platform designed as a final year academic pr
 - Twilio account (for SMS 2FA)
 - Resend account (for email 2FA)
 
-### Installation
+### Installation & Running (5 minutes)
 
 ```bash
-# Set up environment variables
+# 1. Set up client environment variables
 cp .env.example .env
-# Edit .env file and add your API keys
+# Edit .env and add: GOOGLE_MAPS_API_KEY, LIVEKIT_URL
 
-# Install dependencies
+# 2. Set up server environment variables
+cd functions
+cp .env.example .env
+# Edit functions/.env and add all API keys
+cd ..
+
+# 3. Install dependencies
 flutter pub get
 
-# Configure Firebase
+# 4. Configure Firebase
 flutterfire configure
 
-# Run on web
+# 5. Run on web
 flutter run -d chrome
 ```
+
+**That's it!** The app will run with all features working locally. For production deployment with enhanced security, see the Firebase Secret Manager section below.
 
 ---
 
 ## Configuration
 
-### 1. Environment Variables
+### 1. Environment Variables (Required for Testing/Evaluation)
 
 The application uses **two separate `.env` files** for client-side and server-side configuration:
 
@@ -81,7 +89,7 @@ cd functions
 cp .env.example .env
 ```
 
-2. Edit `functions/.env` with regular environment variables:
+2. Edit `functions/.env` with all API keys:
 ```bash
 # Email service (Resend)
 RESEND_API_KEY=your_resend_api_key_here
@@ -91,19 +99,17 @@ TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_PHONE_NUMBER=+1234567890
 
-# LiveKit URL (non-secret)
+# LiveKit (WebRTC video calls)
 LIVEKIT_URL=wss://your-project.livekit.cloud
-
-# IMPORTANT: LIVEKIT_API_KEY and LIVEKIT_API_SECRET are managed by
-# Firebase Secret Manager and should NOT be in this file.
+LIVEKIT_API_KEY=your_livekit_api_key_here
+LIVEKIT_API_SECRET=your_livekit_api_secret_here
 ```
 
 **Important:**
 - Both `.env` files are git-ignored and never committed
 - `.env.example` files provide templates for each environment
-- Client `.env` contains ONLY domain-restricted/public keys
-- Server `functions/.env` contains most server-side secrets
-- **LiveKit API credentials use Firebase Secret Manager** (see below)
+- **For testing/evaluation**: Fill in `functions/.env` with all keys (including LiveKit credentials)
+- **For production deployment**: Migrate LiveKit credentials to Firebase Secret Manager (see section 3 below)
 
 ### 2. Firebase Setup
 
@@ -135,9 +141,11 @@ service cloud.firestore {
 }
 ```
 
-### 3. Firebase Secret Manager
+### 3. Firebase Secret Manager (Optional - Production Only)
 
-For sensitive API credentials that should never be exposed in code or regular environment variables, we use Firebase Secret Manager.
+**Note:** This section is OPTIONAL and only needed for production deployment. For testing/evaluation, using `functions/.env` with all keys is sufficient.
+
+For production deployments with enhanced security, sensitive API credentials (LiveKit API Key/Secret) should be stored in Firebase Secret Manager instead of environment variables.
 
 **Production Setup (Firebase Secrets):**
 
@@ -241,24 +249,22 @@ GOOGLE_MAPS_API_KEY=your_actual_api_key_here
 LIVEKIT_URL=wss://your-project.livekit.cloud
 ```
 
-4. Add **WebSocket URL** to `functions/.env` (server-side):
+4. Add **all LiveKit credentials** to `functions/.env` (server-side):
 ```bash
 LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_api_key_here
+LIVEKIT_API_SECRET=your_api_secret_here
 ```
 
-5. Add **API credentials** to Firebase Secret Manager (see Section 3):
-```bash
-cd functions
-echo -n "your_api_key" | firebase functions:secrets:set LIVEKIT_API_KEY
-echo -n "your_api_secret" | firebase functions:secrets:set LIVEKIT_API_SECRET
-```
+**That's it for testing/evaluation!** The app will work with video calls.
+
+**For production deployment (optional):** Migrate API credentials to Firebase Secret Manager (see Section 3).
 
 **Security Architecture:**
-- Client app: Only knows the WebSocket URL (public, safe)
-- Cloud Functions: Access API Key/Secret from Firebase Secret Manager
-- Token generation happens server-side with secured credentials
+- Client app: Only knows the WebSocket URL (public, safe to expose)
+- Cloud Functions: Access API Key/Secret from environment variables or Secret Manager
+- Token generation happens server-side to protect credentials
 - Credentials never exposed in client code or version control
-- Local development uses `functions/.env.local` (git-ignored)
 
 ---
 
@@ -376,11 +382,10 @@ lib/
 5. **Secrets Management**
    - Separate `.env` files for client and server
    - Client `.env`: Only domain-restricted/public keys (Google Maps, LiveKit URL)
-   - Server `functions/.env`: Regular environment variables (Twilio, Resend, LiveKit URL)
-   - **Firebase Secret Manager**: Most sensitive credentials (LiveKit API Key/Secret)
-   - Local development: `functions/.env.local` for testing (git-ignored)
-   - Production: Secrets accessed via `defineSecret()` in Cloud Functions
-   - All sensitive files git-ignored and never committed to version control
+   - Server `functions/.env`: All server-side API keys (Twilio, Resend, LiveKit)
+   - **Testing/Evaluation**: All keys in `functions/.env` (simple setup)
+   - **Production (Optional)**: Firebase Secret Manager for LiveKit credentials (enhanced security)
+   - All `.env` files git-ignored and never committed to version control
 
 ---
 
