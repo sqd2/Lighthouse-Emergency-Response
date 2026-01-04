@@ -4,7 +4,7 @@ import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:pointycastle/export.dart';
 import 'package:crypto/crypto.dart';
 
-/// Service for encrypting and decrypting sensitive medical data
+/// Service for encrypting and decrypting medical data
 /// Uses AES-256 encryption with user-specific keys derived from UID
 class EncryptionService {
   static bool _isInitialized = false;
@@ -79,10 +79,7 @@ class EncryptionService {
       print(' Data encrypted successfully');
 
       // Return both encrypted data and IV (both base64 encoded)
-      return {
-        'encryptedData': encrypted.base64,
-        'iv': iv.base64,
-      };
+      return {'encryptedData': encrypted.base64, 'iv': iv.base64};
     } catch (e) {
       print('[ERROR] Error encrypting data: $e');
       rethrow;
@@ -91,7 +88,11 @@ class EncryptionService {
 
   /// Decrypt encrypted data
   /// Requires the encrypted data (base64) and IV (base64)
-  static String decrypt(String encryptedDataBase64, String ivBase64, String userUID) {
+  static String decrypt(
+    String encryptedDataBase64,
+    String ivBase64,
+    String userUID,
+  ) {
     try {
       if (encryptedDataBase64.isEmpty || ivBase64.isEmpty) {
         print('[WARN] Empty encrypted data or IV provided for decryption');
@@ -122,7 +123,10 @@ class EncryptionService {
   }
 
   /// Encrypt a map of data (converts to JSON first)
-  static Map<String, String> encryptMap(Map<String, dynamic> data, String userUID) {
+  static Map<String, String> encryptMap(
+    Map<String, dynamic> data,
+    String userUID,
+  ) {
     try {
       final jsonString = jsonEncode(data);
       return encrypt(jsonString, userUID);

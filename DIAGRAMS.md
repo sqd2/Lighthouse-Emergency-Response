@@ -1803,6 +1803,7 @@ classDiagram
         +String description
         +String status (pending|active|arrived|resolved|cancelled)
         +Timestamp createdAt
+        +Timestamp updatedAt (optional)
         +String acceptedBy (dispatcher UID)
         +String acceptedByEmail
         +Timestamp acceptedAt
@@ -1812,6 +1813,8 @@ classDiagram
         +String resolutionNotes
         +String cancellationReason
         +Map encryptedMedicalInfo (optional)
+        +GeoPoint dispatcherLocation (optional)
+        +Timestamp dispatcherLocationUpdatedAt (optional)
     }
 
     class messages {
@@ -1853,8 +1856,8 @@ classDiagram
         +String type (hospital|clinic|police|firestation)
         +GeoPoint location (lat, lng)
         +String address
-        +String phone
-        +String hours
+        +Map meta (optional)
+        +String source (manual|google_places)
         +String createdBy (dispatcher UID)
         +Timestamp createdAt
     }

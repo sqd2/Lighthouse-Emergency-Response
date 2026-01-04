@@ -48,8 +48,10 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   // Track accepted alert ID for location sharing
   String? _activeAlertId;
   StreamSubscription<Position>? _alertLocationStream;
-  Position? _lastSharedPosition; // Track last position to implement manual distance filter
-  GeoPoint? _alertDestination; // Cache alert location to avoid repeated Firestore reads
+  Position?
+  _lastSharedPosition; // Track last position to implement manual distance filter
+  GeoPoint?
+  _alertDestination; // Cache alert location to avoid repeated Firestore reads
 
   // Call listener
   StreamSubscription<QuerySnapshot>? _callListener;
@@ -58,7 +60,13 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   int _currentPageIndex = 1; // Start on Map tab
 
   // Facility filtering state
-  Set<String> _selectedFacilityTypes = {'hospital', 'clinic', 'police station', 'fire station', 'shelter'};
+  Set<String> _selectedFacilityTypes = {
+    'hospital',
+    'clinic',
+    'police station',
+    'fire station',
+    'shelter',
+  };
   bool _showAllFacilities = true;
   String? _highlightedFacilityId;
   String _facilitySearchQuery = '';
@@ -96,13 +104,12 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     if (user == null) return;
 
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-        'lastKnownLocation': GeoPoint(position.latitude, position.longitude),
-        'lastLocationUpdate': FieldValue.serverTimestamp(),
-      });
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+        {
+          'lastKnownLocation': GeoPoint(position.latitude, position.longitude),
+          'lastLocationUpdate': FieldValue.serverTimestamp(),
+        },
+      );
     } catch (e) {
       print('Error updating last known location: $e');
     }
@@ -128,24 +135,24 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         .where('status', isEqualTo: Call.STATUS_RINGING)
         .snapshots()
         .listen((snapshot) {
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          final call = Call.fromFirestore(change.doc);
+          for (var change in snapshot.docChanges) {
+            if (change.type == DocumentChangeType.added) {
+              final call = Call.fromFirestore(change.doc);
 
-          // Extract alertId from the document path
-          // Path format: emergency_alerts/{alertId}/calls/{callId}
-          final pathSegments = change.doc.reference.path.split('/');
-          if (pathSegments.length >= 2) {
-            final alertId = pathSegments[pathSegments.length - 3];
+              // Extract alertId from the document path
+              // Path format: emergency_alerts/{alertId}/calls/{callId}
+              final pathSegments = change.doc.reference.path.split('/');
+              if (pathSegments.length >= 2) {
+                final alertId = pathSegments[pathSegments.length - 3];
 
-            // Show incoming call dialog
-            if (mounted) {
-              showIncomingCallDialog(context, alertId, call);
+                // Show incoming call dialog
+                if (mounted) {
+                  showIncomingCallDialog(context, alertId, call);
+                }
+              }
             }
           }
-        }
-      }
-    });
+        });
   }
 
   Future<void> _loadActiveStatus() async {
@@ -224,10 +231,9 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     if (user == null) return;
 
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({'debugMode': newStatus}, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'debugMode': newStatus,
+      }, SetOptions(merge: true));
 
       if (mounted) {
         setState(() {
@@ -306,115 +312,141 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         throw Exception('Alert has no location');
       }
 
-      print('[CACHE] Alert destination cached: ${_alertDestination!.latitude}, ${_alertDestination!.longitude}');
+      print(
+        '[CACHE] Alert destination cached: ${_alertDestination!.latitude}, ${_alertDestination!.longitude}',
+      );
 
       //Get initial position
       final initialPosition = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
 
-      print('[LOCATION] Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}');
+      print(
+        '[LOCATION] Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}',
+      );
 
       // Update alert with initial dispatcher location (alert already accepted)
       await FirebaseFirestore.instance
           .collection('emergency_alerts')
           .doc(alertId)
           .update({
-        'dispatcherLocation': GeoPoint(initialPosition.latitude, initialPosition.longitude),
-        'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
-      });
+            'dispatcherLocation': GeoPoint(
+              initialPosition.latitude,
+              initialPosition.longitude,
+            ),
+            'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
+          });
 
       print('[LOCATION] Initial location written');
       _lastSharedPosition = initialPosition;
 
       // Start stream (web doesn't honor distanceFilter, so we manually check)
-      _alertLocationStream = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
-      ).listen((position) async {
-        if (_activeAlertId != alertId || _alertDestination == null) return;
+      _alertLocationStream =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 5,
+            ),
+          ).listen((position) async {
+            if (_activeAlertId != alertId || _alertDestination == null) return;
 
-        try {
-          // STEP 1: Check geofence FIRST (using cached destination - no Firestore read!)
-          final distanceToDestination = Geolocator.distanceBetween(
-            position.latitude,
-            position.longitude,
-            _alertDestination!.latitude,
-            _alertDestination!.longitude,
-          );
+            try {
+              // step 1 Check geofence first (using cached destination, no firestore read)
+              final distanceToDestination = Geolocator.distanceBetween(
+                position.latitude,
+                position.longitude,
+                _alertDestination!.latitude,
+                _alertDestination!.longitude,
+              );
 
-          print('[GEOFENCE] Distance to destination: ${distanceToDestination.toStringAsFixed(1)}m');
+              print(
+                '[GEOFENCE] Distance to destination: ${distanceToDestination.toStringAsFixed(1)}m',
+              );
 
-          // If within 50m geofence, mark as arrived (no need to update location)
-          if (distanceToDestination <= 50) {
-            print('[AUTO-ARRIVAL] Within 50m geofence, checking status...');
+              // If within 50m geofence, mark as arrived (no need to update location)
+              if (distanceToDestination <= 50) {
+                print('[AUTO-ARRIVAL] Within 50m geofence, checking status...');
 
-            // Fetch alert ONLY to verify status is still active
-            final alertDoc = await FirebaseFirestore.instance
-                .collection('emergency_alerts')
-                .doc(alertId)
-                .get();
+                // Fetch alert ONLY to verify status is still active
+                final alertDoc = await FirebaseFirestore.instance
+                    .collection('emergency_alerts')
+                    .doc(alertId)
+                    .get();
 
-            if (!alertDoc.exists) {
-              print('[WARN] Alert document no longer exists');
-              return;
-            }
+                if (!alertDoc.exists) {
+                  print('[WARN] Alert document no longer exists');
+                  return;
+                }
 
-            final status = alertDoc.data()?['status'] as String?;
+                final status = alertDoc.data()?['status'] as String?;
 
-            if (status == EmergencyAlert.STATUS_ACTIVE) {
-              print('[AUTO-ARRIVAL] Status is active, marking as arrived...');
+                if (status == EmergencyAlert.STATUS_ACTIVE) {
+                  print(
+                    '[AUTO-ARRIVAL] Status is active, marking as arrived...',
+                  );
+                  await FirebaseFirestore.instance
+                      .collection('emergency_alerts')
+                      .doc(alertId)
+                      .update({
+                        'status': EmergencyAlert.STATUS_ARRIVED,
+                        'arrivedAt': FieldValue.serverTimestamp(),
+                        'dispatcherLocation': GeoPoint(
+                          position.latitude,
+                          position.longitude,
+                        ),
+                        'dispatcherLocationUpdatedAt':
+                            FieldValue.serverTimestamp(),
+                      });
+                  print('[AUTO-ARRIVAL] Successfully marked as arrived');
+
+                  // Clear cached destination to stop geofence checks
+                  _alertDestination = null;
+                  return;
+                } else {
+                  print('[SKIP GEOFENCE] Status is not active: $status');
+                  return; // Don't update location if already arrived/resolved
+                }
+              }
+
+              // step 2 Not within geofence, apply distance filter for location updates
+              if (_lastSharedPosition != null) {
+                final distanceMoved = Geolocator.distanceBetween(
+                  _lastSharedPosition!.latitude,
+                  _lastSharedPosition!.longitude,
+                  position.latitude,
+                  position.longitude,
+                );
+
+                if (distanceMoved < 5.0) {
+                  // Skip update - haven't moved enough
+                  return;
+                }
+              }
+
+              // step 3 Moved 5m+, update dispatcher location in Firestore
+              print(
+                '[UPDATE] Position: ${position.latitude}, ${position.longitude}',
+              );
+              _lastSharedPosition = position;
+
               await FirebaseFirestore.instance
                   .collection('emergency_alerts')
                   .doc(alertId)
                   .update({
-                'status': EmergencyAlert.STATUS_ARRIVED,
-                'arrivedAt': FieldValue.serverTimestamp(),
-                'dispatcherLocation': GeoPoint(position.latitude, position.longitude),
-                'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
-              });
-              print('[AUTO-ARRIVAL] Successfully marked as arrived');
+                    'dispatcherLocation': GeoPoint(
+                      position.latitude,
+                      position.longitude,
+                    ),
+                    'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
+                  });
 
-              // Clear cached destination to stop geofence checks
-              _alertDestination = null;
-              return;
-            } else {
-              print('[SKIP GEOFENCE] Status is not active: $status');
-              return; // Don't update location if already arrived/resolved
+              print('[LOCATION] Written to Firestore');
+            } catch (e) {
+              print('[ERROR] Location update failed: $e');
             }
-          }
-
-          // STEP 2: Not within geofence, apply distance filter for location updates
-          if (_lastSharedPosition != null) {
-            final distanceMoved = Geolocator.distanceBetween(
-              _lastSharedPosition!.latitude,
-              _lastSharedPosition!.longitude,
-              position.latitude,
-              position.longitude,
-            );
-
-            if (distanceMoved < 5.0) {
-              // Skip update - haven't moved enough
-              return;
-            }
-          }
-
-          // STEP 3: Moved 5m+, update dispatcher location in Firestore
-          print('[UPDATE] Position: ${position.latitude}, ${position.longitude}');
-          _lastSharedPosition = position;
-
-          await FirebaseFirestore.instance
-              .collection('emergency_alerts')
-              .doc(alertId)
-              .update({
-            'dispatcherLocation': GeoPoint(position.latitude, position.longitude),
-            'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
           });
-
-          print('[LOCATION] Written to Firestore');
-        } catch (e) {
-          print('[ERROR] Location update failed: $e');
-        }
-      });
 
       print('[STREAM] Location stream started');
     } catch (e) {
@@ -495,9 +527,10 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   void _handleFacilityTap(FacilityPin f) async {
     // Check if current user can delete this facility
     final user = FirebaseAuth.instance.currentUser;
-    final canDelete = f.source == 'manual' &&
-                      f.meta?['addedBy'] != null &&
-                      f.meta?['addedBy'] == user?.uid;
+    final canDelete =
+        f.source == 'manual' &&
+        f.meta?['addedBy'] != null &&
+        f.meta?['addedBy'] == user?.uid;
 
     // Show details for the saved facility
     showModalBottomSheet(
@@ -660,9 +693,9 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
           final valid = lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
           if (!valid) return null;
 
-          final services = (data['services'] as List?)
-              ?.map((s) => s.toString())
-              .toList() ?? [];
+          final services =
+              (data['services'] as List?)?.map((s) => s.toString()).toList() ??
+              [];
 
           final createdAtTimestamp = data['createdAt'] as Timestamp?;
           final createdAt = createdAtTimestamp?.toDate();
@@ -741,7 +774,13 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
                       TextButton(
                         onPressed: () {
                           setState(() {
-                            _selectedFacilityTypes = {'hospital', 'clinic', 'police station', 'fire station', 'shelter'};
+                            _selectedFacilityTypes = {
+                              'hospital',
+                              'clinic',
+                              'police station',
+                              'fire station',
+                              'shelter',
+                            };
                             _showAllFacilities = true;
                             _facilitySearchQuery = '';
                             _highlightedFacilityId = null;
@@ -784,15 +823,15 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
                       // Find matching facility
                       if (value.isNotEmpty && allFacilities.isNotEmpty) {
                         final query = value.toLowerCase();
-                        final matchedFacility = allFacilities.firstWhere(
-                          (facility) {
-                            final address = facility.meta?['address'] as String? ?? '';
-                            return facility.name.toLowerCase().contains(query) ||
-                                address.toLowerCase().contains(query) ||
-                                facility.type.toLowerCase().contains(query);
-                          },
-                          orElse: () => allFacilities.first,
-                        );
+                        final matchedFacility = allFacilities.firstWhere((
+                          facility,
+                        ) {
+                          final address =
+                              facility.meta?['address'] as String? ?? '';
+                          return facility.name.toLowerCase().contains(query) ||
+                              address.toLowerCase().contains(query) ||
+                              facility.type.toLowerCase().contains(query);
+                        }, orElse: () => allFacilities.first);
 
                         setState(() {
                           _highlightedFacilityId = matchedFacility.id;
@@ -813,7 +852,9 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
                 // Show/Hide All Toggle
                 SwitchListTile(
                   title: const Text('Show Facilities'),
-                  subtitle: Text(_showAllFacilities ? 'Visible on map' : 'Hidden from map'),
+                  subtitle: Text(
+                    _showAllFacilities ? 'Visible on map' : 'Hidden from map',
+                  ),
                   value: _showAllFacilities,
                   onChanged: (value) {
                     setState(() {
@@ -837,11 +878,36 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
                   ),
 
                   // Facility type chips
-                  _buildFilterChip('hospital', 'Hospital 🏥', Colors.red, setModalState),
-                  _buildFilterChip('clinic', 'Clinic 💊', Colors.pink, setModalState),
-                  _buildFilterChip('police station', 'Police 👮', Colors.blue, setModalState),
-                  _buildFilterChip('fire station', 'Fire 🚒', Colors.orange, setModalState),
-                  _buildFilterChip('shelter', 'Shelter 🏠', Colors.green, setModalState),
+                  _buildFilterChip(
+                    'hospital',
+                    'Hospital 🏥',
+                    Colors.red,
+                    setModalState,
+                  ),
+                  _buildFilterChip(
+                    'clinic',
+                    'Clinic 💊',
+                    Colors.pink,
+                    setModalState,
+                  ),
+                  _buildFilterChip(
+                    'police station',
+                    'Police 👮',
+                    Colors.blue,
+                    setModalState,
+                  ),
+                  _buildFilterChip(
+                    'fire station',
+                    'Fire 🚒',
+                    Colors.orange,
+                    setModalState,
+                  ),
+                  _buildFilterChip(
+                    'shelter',
+                    'Shelter 🏠',
+                    Colors.green,
+                    setModalState,
+                  ),
                 ],
 
                 const SizedBox(height: 16),
@@ -853,7 +919,12 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     );
   }
 
-  Widget _buildFilterChip(String type, String label, Color color, Function setModalState) {
+  Widget _buildFilterChip(
+    String type,
+    String label,
+    Color color,
+    Function setModalState,
+  ) {
     final isSelected = _selectedFacilityTypes.contains(type);
 
     return CheckboxListTile(
@@ -876,16 +947,23 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: _currentPageIndex != 0 ? AppBar(
-        title: Text(_getPageTitle()),
-        actions: _currentPageIndex == 1 ? [ // Show filter icon on Map tab
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            tooltip: 'Filter Facilities',
-            onPressed: () => _showFacilityFilterDialog(facilities: _currentFacilities),
-          ),
-        ] : null,
-      ) : null,
+      appBar: _currentPageIndex != 0
+          ? AppBar(
+              title: Text(_getPageTitle()),
+              actions: _currentPageIndex == 1
+                  ? [
+                      // Show filter icon on Map tab
+                      IconButton(
+                        icon: const Icon(Icons.filter_list),
+                        tooltip: 'Filter Facilities',
+                        onPressed: () => _showFacilityFilterDialog(
+                          facilities: _currentFacilities,
+                        ),
+                      ),
+                    ]
+                  : null,
+            )
+          : null,
       body: StreamBuilder<QuerySnapshot>(
         // Listen to facilities
         stream: FirebaseFirestore.instance.collection('facilities').snapshots(),
@@ -910,11 +988,14 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('emergency_alerts')
-                .where('status', whereIn: [
-                  EmergencyAlert.STATUS_PENDING,
-                  EmergencyAlert.STATUS_ACTIVE,
-                  EmergencyAlert.STATUS_ARRIVED,
-                ])
+                .where(
+                  'status',
+                  whereIn: [
+                    EmergencyAlert.STATUS_PENDING,
+                    EmergencyAlert.STATUS_ACTIVE,
+                    EmergencyAlert.STATUS_ARRIVED,
+                  ],
+                )
                 .snapshots(),
             builder: (context, alertsSnapshot) {
               final alerts = (alertsSnapshot.hasData)
@@ -951,10 +1032,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Map',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Map'),
           BottomNavigationBarItem(
             icon: Icon(Icons.analytics),
             label: 'Analytics',
@@ -1083,16 +1161,19 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
             ),
           ),
         ),
-
       ],
     );
   }
 
   /// Get the destination name for navigation display
   String _getNavigationDestinationName(List<EmergencyAlert> alerts) {
-    if (_activeAlertId != null && destinationLat != null && destinationLon != null) {
+    if (_activeAlertId != null &&
+        destinationLat != null &&
+        destinationLon != null) {
       // Check if navigating to active alert
-      final activeAlert = alerts.where((a) => a.id == _activeAlertId).firstOrNull;
+      final activeAlert = alerts
+          .where((a) => a.id == _activeAlertId)
+          .firstOrNull;
       if (activeAlert != null) {
         return 'SOS Alert - ${activeAlert.userEmail}';
       }

@@ -76,7 +76,7 @@ classDiagram
     %% Root Collections
     class users {
         <<collection>>
-        +String uid (document ID) 🔑
+        +String uid (document ID) PK
         +String email
         +String name
         +String phone
@@ -94,7 +94,7 @@ classDiagram
 
     class medical_info {
         <<subcollection of users>>
-        +String data (fixed document ID) 🔑
+        +String data (fixed document ID) PK
         +String encryptedData (base64)
         +String iv (base64)
         +String emergencyContactPhone
@@ -104,22 +104,23 @@ classDiagram
 
     class medical_info_access_log {
         <<subcollection of users>>
-        +String logId (auto-generated) 🔑
+        +String logId (auto-generated) PK
         +String accessedBy (dispatcher UID)
         +Timestamp accessedAt
     }
 
     class emergency_alerts {
         <<collection>>
-        +String id (auto-generated) 🔑
-        +String userId (citizen UID) ⚡
+        +String id (auto-generated) PK
+        +String userId (citizen UID) INDEXED
         +String userEmail
         +GeoPoint location (lat, lng)
         +Array~String~ services
         +String description
         +String status (pending|active|arrived|resolved|cancelled)
         +Timestamp createdAt
-        +String acceptedBy (dispatcher UID) ⚡
+        +Timestamp updatedAt (optional)
+        +String acceptedBy (dispatcher UID) INDEXED
         +String acceptedByEmail
         +Timestamp acceptedAt
         +Timestamp arrivedAt
@@ -129,12 +130,13 @@ classDiagram
         +String cancellationReason
         +Map encryptedMedicalInfo (optional)
         +GeoPoint dispatcherLocation (optional)
+        +Timestamp dispatcherLocationUpdatedAt (optional)
     }
 
     class messages {
         <<subcollection of emergency_alerts>>
-        +String id (auto-generated) 🔑
-        +String senderId ⚡
+        +String id (auto-generated) PK
+        +String senderId INDEXED
         +String senderEmail
         +String senderRole (citizen|dispatcher)
         +String messageType (text|image|voice)
@@ -147,10 +149,10 @@ classDiagram
 
     class calls {
         <<subcollection of emergency_alerts>>
-        +String id (auto-generated) 🔑
+        +String id (auto-generated) PK
         +String roomName
-        +String callerId ⚡
-        +String receiverId ⚡
+        +String callerId INDEXED
+        +String receiverId INDEXED
         +String callerName
         +String callerEmail
         +String receiverName
@@ -165,20 +167,20 @@ classDiagram
 
     class facilities {
         <<collection>>
-        +String id (auto-generated) 🔑
+        +String id (auto-generated) PK
         +String name
         +String type (hospital|clinic|police|firestation)
         +GeoPoint location (lat, lng)
         +String address
-        +String phone
-        +String hours
-        +String createdBy (dispatcher UID) ⚡
+        +Map meta (optional)
+        +String source (manual|google_places)
+        +String createdBy (dispatcher UID) INDEXED
         +Timestamp createdAt
     }
 
     class verificationCodes {
         <<collection>>
-        +String userId (user UID) 🔑
+        +String userId (user UID) PK
         +String code (6 digits)
         +String method (email|sms)
         +Timestamp createdAt
@@ -188,7 +190,7 @@ classDiagram
 
     class twoFactorSessions {
         <<collection>>
-        +String userId (user UID) 🔑
+        +String userId (user UID) PK
         +String sessionId (UUID)
         +Boolean verified
         +Timestamp createdAt
@@ -208,22 +210,20 @@ classDiagram
     emergency_alerts "1" --> "0..1" medical_info : references encrypted
 
     %% Notes
-    note for users "🔑 Primary Key: uid (Firebase Auth UID)\n⚡ Indexed Fields: role, isActive\n📝 Role-based access control"
-    note for medical_info "🔒 AES-256-CBC encrypted\n🔑 Key derived from user UID (SHA-256)\n📍 Fixed document ID: 'data'"
-    note for emergency_alerts "🔑 Auto-generated document ID\n⚡ Composite indexes on:\n  - status + createdAt\n  - userId + status + createdAt\n  - acceptedBy + status + createdAt\n📍 Status flow: pending → active → arrived → resolved"
-    note for messages "💬 Real-time chat messages\n⚡ Indexed: isRead + senderId\n📁 Media stored in Firebase Storage"
-    note for calls "📞 WebRTC call metadata\n⚡ CollectionGroup query support\n🔑 Room name: call_{alertId}_{timestamp}"
-    note for verificationCodes "⏱️ Expires in 10 minutes\n🔒 One-time use only\n🗑️ Auto-deleted after verification"
+    note for users "Primary Key: uid (Firebase Auth UID)\nIndexed Fields: role, isActive\nRole-based access control"
+    note for medical_info "AES-256-CBC encrypted\nKey derived from user UID (SHA-256)\nFixed document ID: 'data'"
+    note for emergency_alerts "Auto-generated document ID\nComposite indexes on:\n  - status + createdAt\n  - userId + status + createdAt\n  - acceptedBy + status + createdAt\nStatus flow: pending → active → arrived → resolved"
+    note for messages "Real-time chat messages\nIndexed: isRead + senderId\nMedia stored in Firebase Storage"
+    note for calls "WebRTC call metadata\nCollectionGroup query support\nRoom name: call_{alertId}_{timestamp}"
+    note for verificationCodes "Expires in 10 minutes\nOne-time use only\nAuto-deleted after verification"
 ```
 
 ### Legend
 
-- 🔑 **Primary Key** (Document ID)
-- ⚡ **Indexed Field** (for query optimization)
-- 🔒 **Encrypted Field**
-- 📍 **Important Constraint**
-- 💬 **Real-time Sync**
-- ⏱️ **Time-based Expiry**
+- **PK** - Primary Key (Document ID)
+- **INDEXED** - Indexed Field (for query optimization)
+- **encrypted** - Encrypted Field
+- **optional** - Optional Field
 
 ---
 
