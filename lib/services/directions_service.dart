@@ -20,13 +20,18 @@ class DirectionsService {
   static const String _cloudFunctionUrl =
       'https://us-central1-lighthouse-2498c.cloudfunctions.net/getDirections';
 
-  // CACHING TO PREVENT EXCESSIVE API CALLS
+  // cache to prevent overextending api calls
   static final Map<String, _CachedRoute> _routeCache = {};
   static const Duration _cacheExpiration = Duration(minutes: 5);
 
-  // Round coordinates to ~100m precision (3 decimal places)
+  // Round coordinates to ~100m precision or 3 decs.
   // This prevents API calls for tiny movements
-  static String _getCacheKey(double originLat, double originLng, double destLat, double destLng) {
+  static String _getCacheKey(
+    double originLat,
+    double originLng,
+    double destLat,
+    double destLng,
+  ) {
     final oLat = originLat.toStringAsFixed(3);
     final oLng = originLng.toStringAsFixed(3);
     final dLat = destLat.toStringAsFixed(3);
@@ -34,7 +39,7 @@ class DirectionsService {
     return '$oLat,$oLng->$dLat,$dLng';
   }
 
-  /// Get route from origin to destination (with caching)
+  /// Get route from origin to destination w/cache
   static Future<RouteInfo?> getRoute({
     required double originLat,
     required double originLng,
@@ -42,14 +47,16 @@ class DirectionsService {
     required double destLng,
     bool bypassCache = false,
   }) async {
-    // Check cache first (unless bypassed)
+    // Check cache first unless its bypassed
     if (!bypassCache) {
       final cacheKey = _getCacheKey(originLat, originLng, destLat, destLng);
       final cached = _routeCache[cacheKey];
 
       if (cached != null && !cached.isExpired) {
         print('[CACHE HIT] Saved API call for route: $cacheKey');
-        print('  Cache age: ${DateTime.now().difference(cached.timestamp).inSeconds}s');
+        print(
+          '  Cache age: ${DateTime.now().difference(cached.timestamp).inSeconds}s',
+        );
         return cached.route;
       }
 
@@ -59,7 +66,7 @@ class DirectionsService {
       }
     }
 
-    // Use Cloud Function on web to avoid CORS, direct API on mobile
+    // Use Cloud Function on web to avoid CORS issue, direct API on mobile
     print('[API CALL] Platform is ${kIsWeb ? 'web' : 'native'}');
     RouteInfo? route;
 
@@ -85,25 +92,27 @@ class DirectionsService {
     if (route != null) {
       final cacheKey = _getCacheKey(originLat, originLng, destLat, destLng);
       _routeCache[cacheKey] = _CachedRoute(route);
-      print('[CACHE] Stored route: $cacheKey (${_routeCache.length} total cached)');
+      print(
+        '[CACHE] Stored route: $cacheKey (${_routeCache.length} total cached)',
+      );
     }
 
     return route;
   }
 
-  /// Clear old cache entries (call periodically)
+  /// Clear old cache entries call periodically
   static void clearExpiredCache() {
     _routeCache.removeWhere((key, value) => value.isExpired);
     print('[CACHE] Cleared expired entries. ${_routeCache.length} remaining.');
   }
 
-  /// Clear all cache (useful for testing)
+  /// Clear all cache for testing
   static void clearAllCache() {
     _routeCache.clear();
     print('[CACHE] Cleared all entries.');
   }
 
-  /// Direct API call for mobile platforms
+  /// direct API call for native mobile
   static Future<RouteInfo?> _getRouteDirect({
     required double originLat,
     required double originLng,
@@ -133,7 +142,7 @@ class DirectionsService {
     }
   }
 
-  /// Cloud Function call for web platform (avoids CORS)
+  /// Cloud Function call for web platform avoids CORS
   static Future<RouteInfo?> _getRouteViaCloudFunction({
     required double originLat,
     required double originLng,
@@ -156,14 +165,18 @@ class DirectionsService {
         body: requestBody,
       );
 
-      print('DirectionsService: Cloud Function response status: ${response.statusCode}');
+      print(
+        'DirectionsService: Cloud Function response status: ${response.statusCode}',
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         print('DirectionsService: Successfully received directions data');
         return _parseDirectionsResponse(data);
       } else {
-        print('Cloud Function error: ${response.statusCode} - ${response.body}');
+        print(
+          'Cloud Function error: ${response.statusCode} - ${response.body}',
+        );
         return null;
       }
     } catch (e, stackTrace) {
@@ -176,20 +189,28 @@ class DirectionsService {
   /// Parse directions API response
   static RouteInfo? _parseDirectionsResponse(Map<String, dynamic> data) {
     try {
-      if (data['status'] == 'OK' && data['routes'] != null && data['routes'].isNotEmpty) {
+      if (data['status'] == 'OK' &&
+          data['routes'] != null &&
+          data['routes'].isNotEmpty) {
         final route = data['routes'][0];
         final leg = route['legs'][0];
 
         // Decode polyline
         final encodedPolyline = route['overview_polyline']['points'];
-        print('DirectionsService: Encoded polyline length: ${encodedPolyline.length}');
+        print(
+          'DirectionsService: Encoded polyline length: ${encodedPolyline.length}',
+        );
 
         final polylinePoints = _decodePolyline(encodedPolyline);
         print('DirectionsService: Decoded ${polylinePoints.length} points');
 
         if (polylinePoints.isNotEmpty) {
-          print('DirectionsService: First point: ${polylinePoints.first.latitude}, ${polylinePoints.first.longitude}');
-          print('DirectionsService: Last point: ${polylinePoints.last.latitude}, ${polylinePoints.last.longitude}');
+          print(
+            'DirectionsService: First point: ${polylinePoints.first.latitude}, ${polylinePoints.first.longitude}',
+          );
+          print(
+            'DirectionsService: Last point: ${polylinePoints.last.latitude}, ${polylinePoints.last.longitude}',
+          );
         }
 
         return RouteInfo(
@@ -213,7 +234,9 @@ class DirectionsService {
   /// Decode Google polyline encoding using proven package
   /// This package handles JavaScript compatibility correctly
   static List<LatLng> _decodePolyline(String encoded) {
-    print('DirectionsService: Starting polyline decode, length: ${encoded.length}');
+    print(
+      'DirectionsService: Starting polyline decode, length: ${encoded.length}',
+    );
 
     try {
       // Use the google_polyline_algorithm package which handles JS compatibility
@@ -231,9 +254,13 @@ class DirectionsService {
           print('  Point 1: ${points[1].latitude}, ${points[1].longitude}');
         }
         if (points.length > 2) {
-          print('  Point mid: ${points[points.length ~/ 2].latitude}, ${points[points.length ~/ 2].longitude}');
+          print(
+            '  Point mid: ${points[points.length ~/ 2].latitude}, ${points[points.length ~/ 2].longitude}',
+          );
         }
-        print('  Point last: ${points.last.latitude}, ${points.last.longitude}');
+        print(
+          '  Point last: ${points.last.latitude}, ${points.last.longitude}',
+        );
       }
 
       return points;
@@ -269,6 +296,7 @@ class _CachedRoute {
   _CachedRoute(this.route) : timestamp = DateTime.now();
 
   bool get isExpired {
-    return DateTime.now().difference(timestamp) > DirectionsService._cacheExpiration;
+    return DateTime.now().difference(timestamp) >
+        DirectionsService._cacheExpiration;
   }
 }
