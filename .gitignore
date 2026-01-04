@@ -62,8 +62,21 @@ package-lock.json
 # Documentation and scripts (unrelated to program)
 *.docx
 ~$*.docx
-ch4_*.py
-expand_4_1_intro.py
-concise_intro_4_1.txt
-expanded_intro_text.txt
+*.py
+*.txt
+*.mmd
+ACTIVITY_DIAGRAM_FIXES.md
+SESSION_SUMMARY.md
+SESSION_SUMMARY_*.md
+activity_diagrams.md
+activity_diagrams_swimlanes.md
+sequence_diagrams_simple.md
+DBDiagrams.md
+DIAGRAMS.md
+diagramgpt_*.txt
+architecture_*.txt
+system_architecture_*.txt
 nul
+
+# Keep README
+!README.md

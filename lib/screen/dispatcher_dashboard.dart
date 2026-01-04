@@ -49,6 +49,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
   String? _activeAlertId;
   StreamSubscription<Position>? _alertLocationStream;
   Position? _lastSharedPosition; // Track last position to implement manual distance filter
+  GeoPoint? _alertDestination; // Cache alert location to avoid repeated Firestore reads
 
   // Call listener
   StreamSubscription<QuerySnapshot>? _callListener;
@@ -261,6 +262,7 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
     disposeLocationTracking();
     _alertLocationStream?.cancel();
     _callListener?.cancel();
+    _alertDestination = null; // Clear cached destination
     super.dispose();
   }
 
@@ -287,6 +289,25 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
 
       print('[OK] Starting location sharing for alert...');
 
+      // Fetch alert location ONCE and cache it (cost optimization)
+      final alertDoc = await FirebaseFirestore.instance
+          .collection('emergency_alerts')
+          .doc(alertId)
+          .get();
+
+      if (!alertDoc.exists) {
+        throw Exception('Alert not found');
+      }
+
+      final alertData = alertDoc.data();
+      _alertDestination = alertData?['location'] as GeoPoint?;
+
+      if (_alertDestination == null) {
+        throw Exception('Alert has no location');
+      }
+
+      print('[CACHE] Alert destination cached: ${_alertDestination!.latitude}, ${_alertDestination!.longitude}');
+
       //Get initial position
       final initialPosition = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
@@ -310,45 +331,77 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
       _alertLocationStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
       ).listen((position) async {
-        if (_activeAlertId != alertId) return;
-
-        // MANUAL DISTANCE FILTER - web platform doesn't honor distanceFilter
-        if (_lastSharedPosition != null) {
-          final distanceMoved = Geolocator.distanceBetween(
-            _lastSharedPosition!.latitude,
-            _lastSharedPosition!.longitude,
-            position.latitude,
-            position.longitude,
-          );
-
-          if (distanceMoved < 5.0) {
-            // Skip update - haven't moved enough
-            return;
-          }
-        }
-
-        print('[UPDATE] Position: ${position.latitude}, ${position.longitude}');
-        _lastSharedPosition = position;
+        if (_activeAlertId != alertId || _alertDestination == null) return;
 
         try {
-          // Fetch alert to check for geofence arrival
-          final alertDoc = await FirebaseFirestore.instance
-              .collection('emergency_alerts')
-              .doc(alertId)
-              .get();
+          // STEP 1: Check geofence FIRST (using cached destination - no Firestore read!)
+          final distanceToDestination = Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            _alertDestination!.latitude,
+            _alertDestination!.longitude,
+          );
 
-          if (!alertDoc.exists) {
-            print('[WARN] Alert document no longer exists');
-            return;
+          print('[GEOFENCE] Distance to destination: ${distanceToDestination.toStringAsFixed(1)}m');
+
+          // If within 50m geofence, mark as arrived (no need to update location)
+          if (distanceToDestination <= 50) {
+            print('[AUTO-ARRIVAL] Within 50m geofence, checking status...');
+
+            // Fetch alert ONLY to verify status is still active
+            final alertDoc = await FirebaseFirestore.instance
+                .collection('emergency_alerts')
+                .doc(alertId)
+                .get();
+
+            if (!alertDoc.exists) {
+              print('[WARN] Alert document no longer exists');
+              return;
+            }
+
+            final status = alertDoc.data()?['status'] as String?;
+
+            if (status == EmergencyAlert.STATUS_ACTIVE) {
+              print('[AUTO-ARRIVAL] Status is active, marking as arrived...');
+              await FirebaseFirestore.instance
+                  .collection('emergency_alerts')
+                  .doc(alertId)
+                  .update({
+                'status': EmergencyAlert.STATUS_ARRIVED,
+                'arrivedAt': FieldValue.serverTimestamp(),
+                'dispatcherLocation': GeoPoint(position.latitude, position.longitude),
+                'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
+              });
+              print('[AUTO-ARRIVAL] Successfully marked as arrived');
+
+              // Clear cached destination to stop geofence checks
+              _alertDestination = null;
+              return;
+            } else {
+              print('[SKIP GEOFENCE] Status is not active: $status');
+              return; // Don't update location if already arrived/resolved
+            }
           }
 
-          final alertData = alertDoc.data();
-          final status = alertData?['status'] as String?;
-          final location = alertData?['location'] as GeoPoint?;
+          // STEP 2: Not within geofence, apply distance filter for location updates
+          if (_lastSharedPosition != null) {
+            final distanceMoved = Geolocator.distanceBetween(
+              _lastSharedPosition!.latitude,
+              _lastSharedPosition!.longitude,
+              position.latitude,
+              position.longitude,
+            );
 
-          print('[DEBUG] Alert status: $status, Location exists: ${location != null}');
+            if (distanceMoved < 5.0) {
+              // Skip update - haven't moved enough
+              return;
+            }
+          }
 
-          // Update dispatcher location
+          // STEP 3: Moved 5m+, update dispatcher location in Firestore
+          print('[UPDATE] Position: ${position.latitude}, ${position.longitude}');
+          _lastSharedPosition = position;
+
           await FirebaseFirestore.instance
               .collection('emergency_alerts')
               .doc(alertId)
@@ -358,37 +411,6 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
           });
 
           print('[LOCATION] Written to Firestore');
-
-          // Automatic geofence arrival detection (50 meters)
-          if (status == EmergencyAlert.STATUS_ACTIVE && location != null) {
-            final distance = Geolocator.distanceBetween(
-              position.latitude,
-              position.longitude,
-              location.latitude,
-              location.longitude,
-            );
-
-            print('[GEOFENCE] Distance to alert: ${distance.toStringAsFixed(1)}m (status: $status)');
-
-            if (distance <= 50) {
-              print('[AUTO-ARRIVAL] Within 50m geofence, marking as arrived...');
-              await FirebaseFirestore.instance
-                  .collection('emergency_alerts')
-                  .doc(alertId)
-                  .update({
-                'status': EmergencyAlert.STATUS_ARRIVED,
-                'arrivedAt': FieldValue.serverTimestamp(),
-              });
-              print('[AUTO-ARRIVAL] Successfully marked as arrived');
-            }
-          } else {
-            if (status != EmergencyAlert.STATUS_ACTIVE) {
-              print('[SKIP GEOFENCE] Status is not active: $status');
-            }
-            if (location == null) {
-              print('[SKIP GEOFENCE] Alert location is null');
-            }
-          }
         } catch (e) {
           print('[ERROR] Location update failed: $e');
         }
