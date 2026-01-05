@@ -41,8 +41,9 @@ class _CitizenDashboardState extends State<CitizenDashboard>
   DateTime? _lastRouteCalculation; // Track when we last calculated route
 
   // Throttling settings to reduce API calls
-  static const Duration _routeUpdateThrottle = Duration(seconds: 30);
-  static const double _minimumDistanceForRecalculation = 100.0; // meters
+  // Reduced for emergency response - citizens need real-time route updates
+  static const Duration _routeUpdateThrottle = Duration(seconds: 10);
+  static const double _minimumDistanceForRecalculation = 50.0; // meters
 
   // Medical info tracking
   bool _hasMedicalInfo = false;
@@ -758,7 +759,9 @@ class _CitizenDashboardState extends State<CitizenDashboard>
                       ? now.difference(_lastRouteCalculation!)
                       : const Duration(days: 1); // First update, always recalculate
 
-                  final shouldRecalculate = distanceMoved >= _minimumDistanceForRecalculation &&
+                  // Recalculate if EITHER enough time passed OR enough distance moved
+                  // This ensures route updates even when dispatcher is stuck in traffic
+                  final shouldRecalculate = distanceMoved >= _minimumDistanceForRecalculation ||
                       timeSinceLastCalc >= _routeUpdateThrottle;
 
                   if (shouldRecalculate) {

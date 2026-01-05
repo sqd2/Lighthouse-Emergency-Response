@@ -653,8 +653,14 @@ class LiveKitService extends ChangeNotifier {
 
     try {
       debugPrint('[LiveKitService] Calling window.forceStopAllMediaTracks()');
-      final result = js.context.callMethod('forceStopAllMediaTracks', []);
-      debugPrint('[LiveKitService] JavaScript cleanup result: $result');
+
+      // Check if the function exists before calling
+      if (js.context.hasProperty('forceStopAllMediaTracks')) {
+        final result = js.context.callMethod('forceStopAllMediaTracks', []);
+        debugPrint('[LiveKitService] JavaScript cleanup result: $result');
+      } else {
+        debugPrint('[LiveKitService] forceStopAllMediaTracks() not available in window');
+      }
 
       // Give browser time to process
       await Future.delayed(const Duration(milliseconds: 100));

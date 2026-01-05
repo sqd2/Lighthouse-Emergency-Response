@@ -420,43 +420,60 @@
         // STEP 1: Stop all tracked streams from getUserMedia
         console.log('[MediaCleanup] Stopping tracked streams:', window._activeMediaStreams.size);
         window._activeMediaStreams.forEach(function(stream) {
-          stream.getTracks().forEach(function(track) {
-            console.log('[MediaCleanup] Stopping tracked track:', track.kind, track.label, 'state:', track.readyState);
-            track.stop();
-            totalStopped++;
-          });
+          if (stream && typeof stream.getTracks === 'function') {
+            var tracks = stream.getTracks();
+            if (tracks && Array.isArray(tracks)) {
+              tracks.forEach(function(track) {
+                if (track && typeof track.stop === 'function') {
+                  console.log('[MediaCleanup] Stopping tracked track:', track.kind, track.label, 'state:', track.readyState);
+                  track.stop();
+                  totalStopped++;
+                }
+              });
+            }
+          }
         });
         window._activeMediaStreams.clear();
 
         // STEP 2: Stop all tracks attached to video elements
         document.querySelectorAll('video').forEach(function(video) {
-          if (video.srcObject) {
+          if (video && video.srcObject && typeof video.srcObject.getTracks === 'function') {
             console.log('[MediaCleanup] Found video element with srcObject');
-            video.srcObject.getTracks().forEach(function(track) {
-              if (track.readyState !== 'ended') {
-                console.log('[MediaCleanup] Stopping video track:', track.kind, track.label);
-                track.stop();
-                totalStopped++;
-              }
-            });
+            var videoTracks = video.srcObject.getTracks();
+            if (videoTracks && Array.isArray(videoTracks)) {
+              videoTracks.forEach(function(track) {
+                if (track && track.readyState !== 'ended' && typeof track.stop === 'function') {
+                  console.log('[MediaCleanup] Stopping video track:', track.kind, track.label);
+                  track.stop();
+                  totalStopped++;
+                }
+              });
+            }
             video.srcObject = null;
-            video.load(); // Force video element to release resources
+            if (typeof video.load === 'function') {
+              video.load(); // Force video element to release resources
+            }
           }
         });
 
         // STEP 3: Stop all tracks attached to audio elements
         document.querySelectorAll('audio').forEach(function(audio) {
-          if (audio.srcObject) {
+          if (audio && audio.srcObject && typeof audio.srcObject.getTracks === 'function') {
             console.log('[MediaCleanup] Found audio element with srcObject');
-            audio.srcObject.getTracks().forEach(function(track) {
-              if (track.readyState !== 'ended') {
-                console.log('[MediaCleanup] Stopping audio track:', track.kind, track.label);
-                track.stop();
-                totalStopped++;
-              }
-            });
+            var audioTracks = audio.srcObject.getTracks();
+            if (audioTracks && Array.isArray(audioTracks)) {
+              audioTracks.forEach(function(track) {
+                if (track && track.readyState !== 'ended' && typeof track.stop === 'function') {
+                  console.log('[MediaCleanup] Stopping audio track:', track.kind, track.label);
+                  track.stop();
+                  totalStopped++;
+                }
+              });
+            }
             audio.srcObject = null;
-            audio.load(); // Force audio element to release resources
+            if (typeof audio.load === 'function') {
+              audio.load(); // Force audio element to release resources
+            }
           }
         });
 

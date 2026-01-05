@@ -49,6 +49,23 @@ class Call {
   /// Create Call from Firestore document
   factory Call.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+
+    // Helper function to safely convert Firestore timestamp to DateTime
+    // Handles sentinel values from FieldValue.serverTimestamp()
+    DateTime? safeTimestampToDate(dynamic value) {
+      if (value == null) return null;
+      try {
+        if (value is Timestamp) {
+          return value.toDate();
+        }
+        // Ignore sentinel values from FieldValue.serverTimestamp()
+        return null;
+      } catch (e) {
+        // If conversion fails, return null instead of crashing
+        return null;
+      }
+    }
+
     return Call(
       id: doc.id,
       roomName: data['roomName'] ?? '',
@@ -60,9 +77,9 @@ class Call {
       callerRole: data['callerRole'] ?? 'citizen',
       type: data['type'] ?? TYPE_AUDIO,
       status: data['status'] ?? STATUS_RINGING,
-      startedAt: (data['startedAt'] as Timestamp?)?.toDate(),
-      answeredAt: (data['answeredAt'] as Timestamp?)?.toDate(),
-      endedAt: (data['endedAt'] as Timestamp?)?.toDate(),
+      startedAt: safeTimestampToDate(data['startedAt']),
+      answeredAt: safeTimestampToDate(data['answeredAt']),
+      endedAt: safeTimestampToDate(data['endedAt']),
       duration: data['duration'],
     );
   }

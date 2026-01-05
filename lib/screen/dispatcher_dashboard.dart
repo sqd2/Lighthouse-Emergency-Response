@@ -316,31 +316,68 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
         '[CACHE] Alert destination cached: ${_alertDestination!.latitude}, ${_alertDestination!.longitude}',
       );
 
-      //Get initial position
-      final initialPosition = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
+      //Get initial position with error handling
+      Position? initialPosition;
+      try {
+        initialPosition = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+          ),
+        ).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Location request timed out');
+          },
+        );
 
-      print(
-        '[LOCATION] Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}',
-      );
+        print(
+          '[LOCATION] Initial position: ${initialPosition.latitude}, ${initialPosition.longitude}',
+        );
 
-      // Update alert with initial dispatcher location (alert already accepted)
-      await FirebaseFirestore.instance
-          .collection('emergency_alerts')
-          .doc(alertId)
-          .update({
-            'dispatcherLocation': GeoPoint(
-              initialPosition.latitude,
-              initialPosition.longitude,
+        // Update alert with initial dispatcher location (alert already accepted)
+        await FirebaseFirestore.instance
+            .collection('emergency_alerts')
+            .doc(alertId)
+            .update({
+              'dispatcherLocation': GeoPoint(
+                initialPosition.latitude,
+                initialPosition.longitude,
+              ),
+              'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
+            });
+
+        print('[LOCATION] Initial location written');
+        _lastSharedPosition = initialPosition;
+      } catch (locationError) {
+        print('[LOCATION ERROR] Failed to get initial position: $locationError');
+        // Try with lower accuracy as fallback
+        try {
+          initialPosition = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium,
             ),
-            'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
-          });
+          ).timeout(const Duration(seconds: 5));
 
-      print('[LOCATION] Initial location written');
-      _lastSharedPosition = initialPosition;
+          print('[LOCATION] Fallback position obtained: ${initialPosition.latitude}, ${initialPosition.longitude}');
+
+          await FirebaseFirestore.instance
+              .collection('emergency_alerts')
+              .doc(alertId)
+              .update({
+                'dispatcherLocation': GeoPoint(
+                  initialPosition.latitude,
+                  initialPosition.longitude,
+                ),
+                'dispatcherLocationUpdatedAt': FieldValue.serverTimestamp(),
+              });
+
+          _lastSharedPosition = initialPosition;
+        } catch (fallbackError) {
+          print('[LOCATION ERROR] Fallback also failed: $fallbackError');
+          // Continue without initial position - stream will provide updates
+          print('[LOCATION] No initial position available, waiting for stream updates');
+        }
+      }
 
       // Start stream (web doesn't honor distanceFilter, so we manually check)
       _alertLocationStream =
@@ -446,6 +483,13 @@ class _DispatcherDashboardState extends State<DispatcherDashboard>
             } catch (e) {
               print('[ERROR] Location update failed: $e');
             }
+          }, onError: (error) {
+            // Handle location stream errors (iOS kCLErrorDomain, etc.)
+            print('[LOCATION STREAM ERROR] $error');
+            // Don't crash - location updates will retry automatically
+            // Common errors: kCLErrorLocationUnknown (iOS can't get location)
+          }, onDone: () {
+            print('[LOCATION STREAM] Stream ended');
           });
 
       print('[STREAM] Location stream started');
