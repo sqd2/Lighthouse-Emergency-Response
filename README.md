@@ -4,7 +4,7 @@
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.9.2-blue.svg)](https://flutter.dev/)
 [![Firebase](https://img.shields.io/badge/Firebase-Latest-orange.svg)](https://firebase.google.com/)
-[![Tests](https://img.shields.io/badge/Tests-42%20Passing-success.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-56%20Passing-success.svg)]()
 
 ---
 
@@ -292,7 +292,7 @@ flutter build web --release
 ## Testing
 
 ```bash
-# Run all tests (42 tests)
+# Run all tests (56 tests)
 flutter test
 
 # Run with coverage
@@ -300,9 +300,10 @@ flutter test --coverage
 ```
 
 ### Test Coverage
-- **Model Tests**: 18 tests (MedicalInfo, EmergencyAlert)
+- **Model Tests**: 26 tests (MedicalInfo, EmergencyAlert, Call)
 - **Validator Tests**: 24 tests (Email, Password, Phone, Name)
-- **Total**: 42 tests passing
+- **Service Tests**: 6 tests (EncryptionService)
+- **Total**: 56 tests passing
 
 ---
 
@@ -517,7 +518,7 @@ This project demonstrates:
 - **Security**: End-to-end encryption, 2FA, secure authentication
 - **Real-time Systems**: WebRTC, Firestore real-time sync
 - **Cross-platform Development**: Flutter multi-platform support
-- **Testing**: 42 unit tests with comprehensive coverage
+- **Testing**: 56 unit tests with comprehensive coverage
 - **Documentation**: Comprehensive code comments and README
 
 ---
@@ -562,7 +563,7 @@ All rights reserved for academic evaluation purposes.
 ---
 
 **Version:** 1.0.0
-**Last Updated:** January 1, 2026
-**Flutter:** 3.9.2
-**Dart:** 3.9.2
+**Last Updated:** January 7, 2026
+**Flutter:** 3.38.5 (minimum 3.9.2)
+**Dart:** 3.10.4 (minimum 3.9.2)
 
